@@ -8,8 +8,8 @@ WSL2), administered over Tailscale. Long-lived containers:
 | Container | Role |
 |---|---|
 | `postgres` | The only datastore (pgvector available if ever needed; no Redis, no vector service). |
-| `scheduler` | Tiny loop: reads schedules from config, inserts `tasks` rows at the appointed times. Owns no business logic. |
-| `worker` | Claims tasks from the `tasks` table and runs them: the Replenishment Agent, ActionBroker executors, notification sending. One process, single-task concurrency in v1 (see below). |
+| `scheduler` | Tiny loop: reads schedules from config, inserts `tasks` rows at the appointed times (Shannon's weekly replenishment run, and her 6-weekly ops-consumable reminder — two distinct task kinds). Owns no business logic. |
+| `worker` | Claims tasks from the `tasks` table and runs them: Shannon, ActionBroker executors, notification sending. One process, single-task concurrency in v1 (see below). |
 | `browser` | Headless Chromium (Playwright) used only by broker executors for narescue.com. |
 | `dashboard` | Read-only management UI, reachable only over Tailscale. Approvals do **not** require it — they work via email/SMS links served by `worker`'s small HTTP endpoint exposed publicly for signed approval tokens only. |
 
@@ -27,7 +27,7 @@ stateDiagram-v2
     RUNNING --> WAITING_APPROVAL: proposal at Tier 2 or 3 filed
     WAITING_APPROVAL --> RUNNING: approved (Tier 3 needs second confirmation)
     WAITING_APPROVAL --> REJECTED: denied by human
-    WAITING_APPROVAL --> EXPIRED: approval timeout elapsed
+    WAITING_APPROVAL --> EXPIRED: TTL elapsed (expiry is denial, re-raised fresh)
     RUNNING --> SUCCEEDED: all steps complete
     RUNNING --> FAILED: unrecoverable error or budget exhausted
     RUNNING --> QUEUED: retryable error, attempts remaining
@@ -43,8 +43,9 @@ states: SUCCEEDED, REJECTED, EXPIRED, and FAILED (unless a human requeues).
 
 ## Delegation model
 
-v1 has one agent, so "delegation" is deliberately minimal: the scheduler
-delegates to the worker via task rows; the agent delegates side effects to
+v1 has one agent (Shannon), so "delegation" is deliberately minimal: the
+scheduler delegates to the worker via task rows; Shannon delegates side
+effects to
 the ActionBroker via proposals; the human delegates judgment to nobody —
 Tier 2+ waits for Zach. There is no agent-to-agent delegation. When more
 agents exist, each will be a separate task `kind` claimed by the same
@@ -63,9 +64,11 @@ between agents, so every hand-off is durable and audited.
 - Proposals carry an idempotency key (docs/action-broker.md); duplicate
   execution is refused at the broker even if task logic misbehaves.
 - Stale-data conflicts (approval arrives days after the numbers were
-  computed): every proposal embeds the data snapshot timestamp; approvals
-  older than `approval_ttl` *(param, default 7 days)* expire rather than
-  execute on stale math.
+  computed): every proposal embeds the data snapshot timestamp; a proposal
+  unanswered at its TTL *(param — Tier 2: 72 h, Tier 3: 7 d, reminder at
+  the halfway mark)* lands in EXPIRED, which is a denial — nothing ever
+  auto-approves — and is re-raised with fresh numbers rather than executed
+  on stale math.
 
 ## Failure model
 

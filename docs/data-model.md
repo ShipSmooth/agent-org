@@ -30,23 +30,40 @@ CREATE TABLE suppliers (
     UNIQUE (entity_id, name)
 );
 
--- ============ components (purchasable/consumable parts) ============
+-- ============ components (parts; identity = supplier + part number) ============
 CREATE TABLE components (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entity_id      TEXT NOT NULL REFERENCES entities(id),
-    sku            TEXT NOT NULL,                -- '30-0001', 'PKG-IFAK-POUCH-BLK'
+    supplier_id    UUID NOT NULL REFERENCES suppliers(id),
+                   -- required; 'pending' is a supplier row with capability
+                   -- {pending}, never NULL and never a silent default.
+                   -- Config load fails loudly on a pending supplier whose
+                   -- component class routes to any purchase path.
+    supplier_part_no TEXT NOT NULL,
+                   -- '30-0001' (NAR), '3161' (Dynarex), 'B00006IFHD' (ASIN)
+                   -- are all valid values; the supplier selects the
+                   -- acquisition path.
     name           TEXT NOT NULL,
-    supplier_id    UUID REFERENCES suppliers(id),  -- NULL = unresolved (flagged on gap list)
-    supplier_part_no TEXT,
-    regime         TEXT NOT NULL CHECK (regime IN ('forecast', 'reorder_point')),
-    moq_min        INT NOT NULL DEFAULT 0,
+    class          TEXT NOT NULL CHECK (class IN
+                     ('forecast', 'reorder_point', 'non_stocked', 'ops_consumable')),
+                   -- REQUIRED, NO DEFAULT: the class selects the code path.
+                   -- A component with no class is a configuration error and
+                   -- fails loudly at config load (before any DB sync); the
+                   -- NOT NULL here is the second line of defence.
+    purchase_asin  TEXT,                         -- input side: bought on Amazon
+                                                 -- Business; builds the staged cart
+    moq_min        INT NOT NULL DEFAULT 0,       -- forecast class only
     moq_increment  INT NOT NULL DEFAULT 1 CHECK (moq_increment >= 1),
-    reorder_point  INT,                          -- reorder_point regime only
+    reorder_point  INT,                          -- reorder_point class only
     reorder_target INT,
     cover_target_weeks  NUMERIC(4,1),            -- NULL = entity default
     safety_stock_weeks  NUMERIC(4,1),
-    UNIQUE (entity_id, sku)
+    UNIQUE (entity_id, supplier_id, supplier_part_no)
 );
+-- No inventory columns apply to non_stocked or ops_consumable components:
+-- non_stocked is infinite-for-feasibility / zero-to-purchase by class;
+-- ops_consumable has no inventory at all (its path is the calendar-triggered
+-- reminder in docs/replenishment.md §4.1, never a null stock level).
 
 -- ============ products (sellable SKUs) ============
 CREATE TABLE products (
@@ -56,6 +73,16 @@ CREATE TABLE products (
     name           TEXT NOT NULL,
     product_type   TEXT NOT NULL CHECK (product_type IN
                      ('nar_finished_kit', 'hmz_kit', 'nar_component_standalone')),
+    sales_asin     TEXT,                          -- output side: listed on Amazon
+                                                  -- (FBA/FBM); read for velocity.
+                                                  -- A kit has sales_asin and no
+                                                  -- purchase_asin; a NAR component
+                                                  -- resold standalone has BOTH —
+                                                  -- purchase_asin on its component
+                                                  -- row, sales_asin here, linked
+                                                  -- via component_id. Never merged
+                                                  -- into one field (~75 NAR SKUs
+                                                  -- are in the both case).
     component_id   UUID REFERENCES components(id), -- standalone sales of a component
     kit_group      TEXT,                          -- groups channel aliases of one HMZ kit
     channel_alias  TEXT,                          -- 'fba' | 'fbm' | ... within kit_group
@@ -89,11 +116,11 @@ CREATE TABLE channels (
 CREATE TABLE tasks (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entity_id     TEXT NOT NULL REFERENCES entities(id),
-    kind          TEXT NOT NULL,                 -- 'replenishment'
+    kind          TEXT NOT NULL,                 -- 'shannon_replenishment', 'shannon_ops_reminder'
     state         TEXT NOT NULL DEFAULT 'QUEUED' CHECK (state IN
                     ('QUEUED','RUNNING','WAITING_APPROVAL','SUCCEEDED',
                      'FAILED','REJECTED','EXPIRED')),
-    schedule_slot TEXT NOT NULL,                 -- 'replenishment/2026-W34'
+    schedule_slot TEXT NOT NULL,                 -- 'shannon_replenishment/2026-W34'
     attempts      INT NOT NULL DEFAULT 0,
     max_attempts  INT NOT NULL DEFAULT 3,
     heartbeat_at  TIMESTAMPTZ,
@@ -136,7 +163,9 @@ CREATE TABLE approvals (
     decision      TEXT NOT NULL CHECK (decision IN ('approved', 'denied')),
     decided_by    TEXT NOT NULL,                 -- 'zach' (signed token identity)
     channel       TEXT NOT NULL CHECK (channel IN ('email', 'sms', 'dashboard')),
-    token_id      TEXT NOT NULL,                 -- the signed approval token used
+                  -- SMS may decide Tier ≤ 2 only; Tier 3 stages are email or
+                  -- dashboard. Enforced by the broker, not just this comment.
+    token_id      TEXT NOT NULL,                 -- the signed approval token / SMS one-time code used
     decided_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (proposal_id, stage)
 );
@@ -146,7 +175,7 @@ CREATE TABLE audit_log (
     id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     entity_id     TEXT NOT NULL REFERENCES entities(id),
     at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    actor         TEXT NOT NULL,                 -- 'agent:replenishment', 'broker', 'human:zach'
+    actor         TEXT NOT NULL,                 -- 'agent:shannon', 'broker', 'human:zach'
     task_id       UUID,
     proposal_id   UUID,
     event         TEXT NOT NULL,                 -- 'task.state', 'proposal.status', ...
@@ -161,7 +190,7 @@ CREATE TABLE agent_runs (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entity_id     TEXT NOT NULL REFERENCES entities(id),
     task_id       UUID NOT NULL REFERENCES tasks(id),
-    agent_kind    TEXT NOT NULL,
+    agent_kind    TEXT NOT NULL,                 -- 'shannon'
     model_calls   JSONB NOT NULL DEFAULT '[]',   -- model, tokens, cost per call
     step_count    INT NOT NULL DEFAULT 0,
     wall_ms       INT,

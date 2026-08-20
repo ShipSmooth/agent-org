@@ -15,12 +15,16 @@ legal_name: iThrive Medical LLC
 status: active                # active | dormant
 timezone: America/Chicago
 agents:                       # which agents run for this entity
-  - kind: replenishment
+  - name: shannon             # agents are named (docs/conventions.md)
+    kind: shannon_replenishment
     schedule: "cron: 0 6 * * MON"
+  - name: shannon
+    kind: shannon_ops_reminder
+    schedule: "every: 6 weeks"    # cadence is config, not code
 channels: [amazon_fba, amazon_fbm, shopify, walmart_sf, walmart_wfs]
 suppliers_config: config/ithrive/suppliers.yaml
 boms_config: config/ithrive/boms.yaml
-replenishment_config: config/ithrive/replenishment.yaml
+shannon_config: config/ithrive/shannon.yaml
 policy_config: config/ithrive/policy.yaml     # inherits global defaults
 notifications:
   email: zach@shipsmooth.com
@@ -31,7 +35,7 @@ books: quickbooks_online
 
 A definition carries: identity, status, timezone, the agents it runs and
 their schedules, its channels, paths to its per-entity configs (suppliers,
-BOMs, replenishment parameters, policy overrides), notification targets,
+BOMs, Shannon's parameters, policy overrides), notification targets,
 its credential prefix, and its accounting system. ShipSmooth exists as
 `status: dormant` with an empty `agents:` list — defined, running nothing.
 Lima Zulu is registered with no agents until later phases (note for then:
@@ -93,8 +97,8 @@ the repo, not the database.
    config: `INSERT ... ON CONFLICT DO NOTHING` into `entities`).
 3. Add the entity's credentials to the host `.env` under its prefix
    (`NEWCO_VEEQO_API_KEY=`, …) per `.env.example`.
-4. Add its per-entity config files (suppliers, BOMs, replenishment
-   parameters, policy overrides) under `config/newco/`.
+4. Add its per-entity config files (suppliers, BOMs, Shannon parameters,
+   policy overrides) under `config/newco/`.
 5. `docker compose restart worker scheduler`.
 
 No migration, no new table, no Python change. RLS policies reference the
@@ -106,7 +110,7 @@ automatically.
 `tests/test_multi_entity_acceptance.py::test_add_entity_with_zero_code_changes`
 
 1. **Given** a running system with `ithrive` seeded and one completed
-   replenishment task.
+   `shannon_replenishment` task.
 2. **When** the test writes `config/entities/testco.yaml` to a temp config
    dir, sets `TESTCO_*` env vars to fixtures, and calls the same startup
    sync the worker calls — importing no new modules and touching no source
@@ -119,7 +123,7 @@ automatically.
    c. A connection that never sets `app.entity_id` gets a raised database
       error (asserted with `pytest.raises`) on `SELECT * FROM tasks` —
       not an empty result.
-   d. A testco replenishment dry-run completes using testco fixtures and
+   d. A testco `shannon_replenishment` dry-run completes using testco fixtures and
       writes audit rows carrying `entity_id = 'testco'` only.
 
 If any step requires editing a `.py` file, the test — and the promise —

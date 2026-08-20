@@ -22,7 +22,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # worker:      # Phase 1: claims tasks, runs the Replenishment Agent + broker executors
+  # worker:      # Phase 1: claims tasks, runs Shannon + broker executors
   # scheduler:   # Phase 1: enqueues tasks from config schedules
   # browser:     # Phase 1: headless Chromium (Playwright) for narescue.com
   # dashboard:   # Phase 2: read-only management UI, Tailscale-only

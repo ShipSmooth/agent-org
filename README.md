@@ -2,9 +2,9 @@
 
 The Org: a self-hosted agent system that runs business operations across
 Zach's LLCs with tiered autonomy. Humans approve consequential actions;
-everything else runs unattended. v1 ships one agent — inventory
-replenishment for iThrive Medical — which stages a NAR cart and writes a
-report. It never purchases.
+everything else runs unattended. v1 ships one agent: **Shannon**, who
+handles inventory replenishment for iThrive Medical — she stages a NAR
+cart and writes a report. She never purchases.
 
 **This repository currently contains Phase 0 only: the architecture
 specification, a package skeleton, and tooling. There is no application
@@ -25,7 +25,11 @@ code yet.**
   adding an LLC with zero code changes
 - [docs/action-broker.md](docs/action-broker.md) — the single chokepoint
   for side effects
-- [docs/agents.md](docs/agents.md) — the one v1 agent and its hard limits
+- [docs/agents.md](docs/agents.md) — Shannon, the one v1 agent, and her
+  hard limits
+- [docs/conventions.md](docs/conventions.md) — naming: the agent is
+  Shannon (`shannon` in code); agents are never referred to only by
+  function
 - [docs/data-model.md](docs/data-model.md) — Postgres DDL and RLS policies
 - [docs/adr/](docs/adr/) — decision records
 

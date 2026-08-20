@@ -43,11 +43,23 @@ PROPOSED ──policy──► APPROVED_AUTO (Tier 0/1) ────────
 
 Rules: capability check (docs/supplier-model.md) runs before policy; the
 audit row is written at PROPOSED and at **every** transition, before the
-transition's work executes (write-ahead, append-only); approvals older
-than the proposal's TTL, or whose `data_snapshot_at` exceeds staleness
-limits, land in EXPIRED and must be re-proposed with fresh numbers. Tier 1
-executes immediately and notifies after; Tier 0 actions are internal and do
-not pass through the broker at all (they have no external effect).
+transition's work executes (write-ahead, append-only). Tier 1 executes
+immediately and notifies after; Tier 0 actions are internal and do not
+pass through the broker at all (they have no external effect).
+
+**TTL and expiry.** Tier 2 proposals wait 72 hours; Tier 3 wait 7 days;
+both get a reminder at the halfway mark (36 h / 3.5 d). An unanswered
+proposal at TTL lands in EXPIRED, which is a denial — **nothing ever
+auto-approves by silence** — and the broker re-raises it as a new proposal
+with freshly-read numbers (new `data_snapshot_at`, new idempotency salt).
+The same applies when `data_snapshot_at` exceeds staleness limits.
+
+**Approval channels.** Email and SMS work without VPN; only the dashboard
+is Tailscale-only. SMS may decide **Tier 2 and below only**, and an SMS
+approval reply must contain the short one-time code shown in the message —
+a bare "Y" is rejected. Tier 3 requires email (or dashboard) for both the
+approval and the second confirmation; the broker rejects any SMS decision
+on a Tier 3 stage regardless of code.
 
 ## Reversal strategy — per action type
 
@@ -55,6 +67,7 @@ Reversal is itself a proposal (audited, tiered), never an ad-hoc call.
 
 | action_type | Reversible? | Strategy |
 |---|---|---|
+| `amazon_business.stage_cart` | Yes | The cart is a constructed URL from `purchase_asin`s; discard it. Nothing to undo at Amazon. |
 | `nar.stage_cart` | Yes | `nar.clear_cart` — browser automation empties the staged cart. Harmless even half-done; a cart costs nothing. |
 | `notify.email` / `notify.sms` | No | Cannot unsend. Mitigation: correction message referencing the original's proposal id. This irreversibility is why anomalous notifications are still tiered, not free. |
 | `fba.create_inbound_plan` (future) | Partly | Cancel the plan/shipment in Seller Central before carrier pickup; after pickup, irreversible → the *creation* is Tier 2 and flagged irreversible-after-pickup in the approval. |
@@ -68,7 +81,7 @@ registry; the approval email states it, so Zach knows what "yes" commits.
 
 `idempotency_key = sha256(entity_id, action_type, canonical(payload),
 schedule_slot)` where `schedule_slot` identifies the business occurrence
-(e.g. `replenishment/2026-W34`), not the attempt. The column is UNIQUE:
+(e.g. `shannon_replenishment/2026-W34`), not the attempt. The column is UNIQUE:
 
 - A retried or crashed-and-reaped task re-filing the same proposal hits the
   unique constraint; the broker returns the **existing** proposal and its

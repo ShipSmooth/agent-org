@@ -12,7 +12,7 @@ A headless Chromium (Playwright) executor, owned by the broker, logs in
 with credentials from environment variables (Chrome's saved passwords are
 unreachable from a container), stages the cart, and captures the freight
 quote into the proposal result. v1 grants NAR `stage_cart` but **not**
-`purchase`: the agent never checks out.
+`purchase`: Shannon never checks out.
 
 ## Consequences
 - Inherently brittle: site redesigns break selectors. Mitigated by staging

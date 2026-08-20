@@ -2,7 +2,12 @@
 
 Suppliers are data, not code paths. Each supplier record declares
 **capabilities**, and a supplier's capabilities are the hard ceiling on what
-the agent may even *propose* for that supplier's lines. The ActionBroker
+Shannon may even *propose* for that supplier's lines. Component identity is
+`(supplier, supplier_part_number)` — a NAR part number (`30-0001`), a
+Dynarex item number (`3161`), and an Amazon ASIN (`B00006IFHD`) are all
+valid part numbers; the supplier selects the acquisition path. The model is
+not NAR-shaped: fewer than half the kit BOM lines (23 of 61) are NAR. The
+ActionBroker
 rejects any proposal that exceeds the supplier's declared capability —
 before policy tiers are even consulted.
 
@@ -11,10 +16,10 @@ before policy tiers are even consulted.
 | Supplier | Integration | Capabilities | Notes |
 |---|---|---|---|
 | **NAR** (North American Rescue) | Browser automation (headless Chromium) against narescue.com — **no API**, confirmed with vendor | `read_catalog`, `read_order_history`, `stage_cart` | Session expires frequently and requires clicking a login button; automation re-logs-in from env-var credentials (Chrome saved passwords are unreachable from a container). Freight is LTL, auto-quoted only at checkout: discovered and reported, never predicted. Catalogue updates arrive monthly, manually, from Zach's NAR contact. **No `purchase` capability in v1.** |
-| **Dynarex** | None | `report_only` | Gloves, Israeli bandages, emergency blankets, tape, markers. |
-| **Amazon Business** | None | `report_only` | Overlaps Dynarex lines; whichever supplier a component record names. |
+| **Dynarex** | None | `report_only` | Gloves, Israeli bandages, emergency blankets, tape, markers. Settled mappings: Sterile Krinkle Gauze = 3161; Self-Adherent Bandage 3in × 5yd = 3173 Sensi-Wrap. |
+| **Amazon Business** | Cart URL construction from `purchase_asin`s (no account access) | `stage_cart` (URL only), `report_only` lines otherwise | Overlaps Dynarex lines; whichever supplier a component record names. Staging an ops-consumable cart is Tier 1, notify after — a cart URL spends nothing and reaches no outside party. |
 | **Own packaging** (Zach's print/pack vendors) | None | `report_only` | Instruction cards, carrying cases, resealable bags, MOLLE pouches. |
-| *(unresolved, ~5 lines)* | — | `report_only` | Flagged "supplier unknown" on every gap list until assigned. |
+| **pending** (explicit state, 1 line today) | — | `pending` | Not a default: config load fails loudly if a `pending` component's class routes to any purchase path; otherwise the line appears on the gap list flagged "supplier pending". Today: the Latex Tourniquet Band, open between NAR BOA 30-0009/30-0071 and Dynarex 3139. |
 
 ## Capability vocabulary
 
@@ -26,15 +31,21 @@ before policy tiers are even consulted.
   supplier record grants it, so a purchase proposal is rejected at the
   capability check regardless of tier.
 - `report_only` — the null capability: lines appear on the gap list only.
+- `pending` — an explicit unresolved-supplier state that fails loudly at
+  config load rather than defaulting to anything.
 
-## How capability constrains the agent
+## How capability constrains Shannon
 
 The replenishment output is split per supplier (docs/replenishment.md §5):
 
 - Lines whose supplier has `stage_cart` → an ActionProposal to stage that
-  supplier's cart (Tier 2). Today that is NAR only.
+  supplier's cart. NAR cart staging is Tier 2; an Amazon Business cart URL
+  built from `purchase_asin`s is Tier 1 (see docs/policy.md).
 - Lines whose supplier is `report_only` → gap-list entries inside the weekly
-  report proposal. No per-line action exists for the agent to take.
+  report proposal. No per-line action exists for Shannon to take.
+- `ops_consumable` components never enter this split at all — they belong
+  to the separate calendar-triggered reminder (docs/replenishment.md §4.1),
+  which shares only the cart-staging machinery.
 
 Enforcement is layered: (1) the calculator only *generates* actionable lines
 for capable suppliers; (2) the ActionBroker independently re-checks

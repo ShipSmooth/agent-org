@@ -13,6 +13,11 @@ overrides that inherit and may tighten but never loosen. Any action
 matching no rule resolves to Tier 3 (default-deny). Anomaly triggers
 ($75k absolute; 150% of trailing 8-order average; any line 2× its trailing
 average; total units 2× trailing average) escalate purchases to Tier 3.
+Approvals expire to DENIED — never auto-approve — after 72 hours (Tier 2)
+or 7 days (Tier 3), with a reminder at the halfway mark, and are re-raised
+with fresh numbers. SMS (reply with the one-time code shown, never a bare
+"Y") may decide Tier 2 and below; Tier 3 requires email plus the second
+confirmation, never SMS.
 
 ## Consequences
 - Thresholds are a config PR Zach can read; the resolved tier and fired

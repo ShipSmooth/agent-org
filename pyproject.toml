@@ -50,7 +50,8 @@ testpaths = ["tests"]
 source = ["src/agent_org"]
 
 # Enforced from Phase 1 (there is no code yet):
-# 85% coverage on broker, policy, tenancy, audit, replenishment; 60% elsewhere.
+# 85% coverage on broker, policy, tenancy, audit, shannon (the replenishment
+# calculator); 60% elsewhere.
 
 [tool.importlinter]
 root_package = "agent_org"
@@ -58,5 +59,5 @@ root_package = "agent_org"
 [[tool.importlinter.contracts]]
 name = "Agents may not import integration clients directly (ActionBroker is the only path)"
 type = "forbidden"
-source_modules = ["agent_org.agents", "agent_org.replenishment"]
+source_modules = ["agent_org.agents", "agent_org.shannon"]
 forbidden_modules = ["agent_org.broker.executors"]

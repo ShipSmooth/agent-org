@@ -11,8 +11,13 @@ code change.
 |---|---|---|
 | 0 | Silent | Reads, analysis, internal drafts. No broker involvement. |
 | 1 | Notify after | Executes immediately; Zach is told in the next digest. |
-| 2 | Approval | Waits for Zach's approval (email link; SMS if urgent). |
-| 3 | Approval + second confirmation | Two distinct confirmations, the second restating totals and anomaly reasons. |
+| 2 | Approval | Waits for Zach's approval. Email link, or SMS reply containing the short one-time code shown in the message (a bare "Y" is invalid — too easy to send by accident). TTL 72 hours, reminder at the halfway mark. |
+| 3 | Approval + second confirmation | Two distinct confirmations, the second restating totals and anomaly reasons. **Email (or dashboard) only — never SMS.** TTL 7 days, reminder at the halfway mark. |
+
+Expiry is denial: an approval that reaches its TTL unanswered lands in
+EXPIRED (treated as DENIED — nothing ever auto-approves by silence) and
+Shannon re-raises the proposal with fresh numbers. Email and SMS work
+without VPN; only the dashboard sits behind Tailscale.
 
 **Default-deny:** any action matching no rule resolves to Tier 3. Unknown
 means maximum caution.
@@ -52,7 +57,10 @@ thresholds:
     total_units_vs_trailing_avg_x: 2.0
     trailing_window_orders: 8
     min_history_orders: 4
-  approval_ttl_days: 7
+  approval_ttl:
+    tier2_hours: 72          # reminder at 36h; expiry = DENIED + re-raise
+    tier3_days: 7            # reminder at 3.5d; expiry = DENIED + re-raise
+  sms_approval_max_tier: 2   # Tier 3 is email + second confirmation, never SMS
 
 rules:
   # ---- Tier 0: silent reads and internal work ----
@@ -70,6 +78,12 @@ rules:
     tier: 1
   - action: internal.update_forecast_params    # writing computed velocities to DB
     tier: 1
+  - action: amazon_business.stage_cart          # ops-consumable cart URL from purchase_asins
+    tier: 1                                     # spends nothing, reaches no outside party
+
+  # ---- Tier 0: the ops-consumable reminder report itself ----
+  - action: internal.write_ops_reminder_report  # calendar-triggered, every 6 weeks (param)
+    tier: 0
 
   # ---- Tier 2: reaches outside the company / any purchase action ----
   - action: nar.stage_cart                # stage the weekly NAR order cart
@@ -121,6 +135,8 @@ thresholds:
 | Email Zach the weekly report | Tier 2 (reaches a person; he is the approver, so in practice it is the approval itself). |
 | Update a Shopify product description | Tier 2. |
 | Write computed velocities to the database | Tier 1, in the next digest. |
+| Emit the 6-weekly ops-consumable reminder report (with purchase ASINs) | Tier 0 — a draft that spends nothing. |
+| Stage the Amazon Business cart from that report's ASINs | Tier 1 — executes, fulfilment lead and Zach notified after. |
 | Read Veeqo inventory | Tier 0, silent. |
 | Anything not matching a rule (e.g. a future agent invents `qbo.create_bill`) | **Tier 3 by default-deny.** |
 

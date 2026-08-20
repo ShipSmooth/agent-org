@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: make install
+      - run: make lint
+      - run: make typecheck
+      - run: make importcheck
+      - run: make test
+      - name: No credential literals in source
+        run: |
+          ! grep -rInE "(api[_-]?key|password|secret|token)\s*=\s*['\"][A-Za-z0-9_/+-]{12,}['\"]" src/

@@ -1,0 +1,31 @@
+# Skeleton — targets Docker Desktop on Windows with WSL2.
+# Phase 0 only defines postgres; worker/scheduler/browser/dashboard are
+# commented placeholders until there is application code to run.
+
+services:
+  postgres:
+    image: postgres:16.9
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agent_org
+      POSTGRES_USER: agent_org_migrator
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+    ports:
+      - "127.0.0.1:5432:5432"   # localhost only; remote admin goes over Tailscale
+    volumes:
+      # Named volume, NOT a Windows bind mount: Postgres data on the Windows
+      # filesystem via WSL2 is slow and permission-fragile.
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_org_migrator -d agent_org"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # worker:      # Phase 1: claims tasks, runs the Replenishment Agent + broker executors
+  # scheduler:   # Phase 1: enqueues tasks from config schedules
+  # browser:     # Phase 1: headless Chromium (Playwright) for narescue.com
+  # dashboard:   # Phase 2: read-only management UI, Tailscale-only
+
+volumes:
+  pgdata:

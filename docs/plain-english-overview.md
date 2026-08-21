@@ -56,7 +56,13 @@ programming project.
 including order history. **Shopify** is used only for product descriptions
 and parts lists; its stock numbers are placeholders (999, 2000, 1) and are
 never trusted. **narescue.com** has no API, so Shannon drives a real web
-browser to log in and stage the cart, as you would by hand.
+browser to log in and stage the cart, as you would by hand — and its
+order-status page lies (it shows delivered orders as "Processing"), so
+Shannon never reads it. **Gmail** is the truth for what is still on order
+from NAR: an order counts as outstanding only if there is a confirmation
+email with no matching shipping notification. If Gmail can't be read or
+the answer is ambiguous, she stops and asks you — double-ordering is the
+most expensive mistake this system can make.
 
 ## Component classes — what can even be bought
 
@@ -66,8 +72,9 @@ startup rather than sneaking into a purchase path:
 - **forecast** — NAR and other high-value kit components. Full demand math,
   minimum-order rounding, into the staged NAR cart.
 - **reorder_point** — kit consumables (gloves, tape, gauze, packaging).
-  Flagged when stock drops below a threshold; into a supplier PO or an
-  Amazon Business cart.
+  Flagged when stock drops below a threshold; into a staged cart where the
+  supplier supports one (Dynarex, Amazon Business), otherwise onto the
+  report for you to order by hand.
 - **non_stocked** — in a kit's parts list but never held in inventory (the
   first is a wall mount used in one kit variant). Counted for kit
   description and cost, **never** placed in any cart or recommendation.
@@ -78,12 +85,27 @@ startup rather than sneaking into a purchase path:
   Tier 0; staging the cart is Tier 1. It goes to the fulfilment lead too,
   not only you.
 
-Suppliers matter as much as classes: only 23 of the 61 kit component lines
-come from NAR. Each part is identified by its supplier plus that supplier's
-part number, and the supplier decides how it can be bought — NAR via the
-browser, Dynarex via a PO, Amazon Business via a cart. A part whose supplier
-is still `pending` (one remains: the latex tourniquet band) can only appear
-on the report, never in a cart.
+Suppliers matter as much as classes: fewer than half the kit component
+lines come from NAR (the real parts list is committed at
+`config/ithrive/boms.yaml` — 83 lines across seven kits). Each part is
+identified by its supplier plus that supplier's part number, and the
+supplier decides how it can be bought — NAR and Dynarex via the browser
+(cart staged, never checked out), Amazon Business via a cart link, World
+Richman and printed cards by hand from the report. Three "no supplier"
+situations are kept distinct: **pending** (a mistake to fix — none exist
+today), **internal** (you hold stock loose, like the ~2,000 triangular
+bandages — Shannon reports, never orders), and **unsourced** (deliberately
+open, like the nitrile gloves you buy from whoever is cheapest — Shannon
+prompts you when stock is low and never picks a supplier for you).
+
+One more thing every part carries: its **pack size**. You think in single
+units; suppliers often sell packs. The NAR nasopharyngeal airway is the
+clear case — each kit uses one, NAR sells a two-pack, so a need of 370
+airways means **185** in the cart, never 370. Shannon does all her math in
+single units and converts to packs as the very last step. She reads pack
+sizes off the live listing the first time she meets a part and asks you to
+confirm; if a listing's pack size later changes, she halts that line and
+flags it instead of ordering.
 
 ## How a weekly run flows
 
@@ -94,57 +116,89 @@ on the report, never in a cart.
    "exploded": forecast kit sales become component needs via the parts
    lists in configuration (Veeqo can't link FBA kits to their parts, so the
    recipes live in a config file you can read).
-4. She splits the list by supplier: NAR lines become a draft order; other
-   suppliers' lines become a gap list she can only report.
-5. NAR lines are rounded **up** to NAR's minimums and case steps.
-6. She proposes two actions — stage the NAR cart, email you the report —
-   both Tier 2. An unusually large order escalates to Tier 3.
-7. You approve from the email (no VPN needed). She stages the cart,
+4. She checks Gmail for NAR orders still awaiting shipment, so nothing is
+   ordered twice.
+5. She splits the list by supplier: NAR and Dynarex lines become staged
+   carts (with your approval); other suppliers' lines become a gap list
+   she can only report.
+6. Quantities are rounded **up** to each supplier's minimums and case
+   steps, then up to the nearest 5, then converted to packs.
+7. She proposes the actions — stage the carts, email you the report —
+   Tier 2. An unusually large order escalates to Tier 3.
+8. You approve from the email (no VPN needed). She stages the cart,
    captures NAR's freight quote (discoverable only at checkout), and
    attaches it.
-8. You buy, or you don't. Her job ends at the staged cart.
+9. You buy, or you don't. Her job ends at the staged cart. Every report
+   also carries the **parking lot** — a numbered list of open issues
+   (unsourced pouches, missing lead times, and so on), each showing what
+   it blocks and how long it has been open. Items leave the list only when
+   you clear them. And before any run, a `shannon validate-config` check
+   reads the config and fails in plain English (file and line, no
+   stack traces) if anything is missing or malformed.
 
 ## The worked example — check this by hand
 
-Assumptions used throughout: sales velocity is the average of the last 8
-weeks of Veeqo orders; NAR delivery takes 2 weeks; you want 8 weeks of
-cover, so Shannon plans for 10 weeks (2 + 8); safety stock is 2 extra weeks
-of sales as a cushion against a bad forecast.
+Assumptions used throughout (your documented buying process, now the
+defaults): sales velocity is the trailing **90 days** of Veeqo sales,
+converted to a weekly rate (units in 90 days ÷ 12.857); NAR delivery takes
+**3 weeks**; you want **7 weeks of total cover, including the lead time**
+(3 lead + 4 buffer), so Shannon plans for 7 weeks — not 7 on top of 3;
+no separate safety stock (the buffer is inside the 7); every quantity is
+rounded up to the nearest 5 after any minimum-order rule.
+
+**The kits first.** The four full-IFAK colourways (IFAK-CAT-BLACK, -GREEN,
+-COYOTE, -MULTICAM) sold 450 units in the last 90 days → **35/week**
+combined. The Compact IFAK (IFAK-CAT-COMPACT) sold 90 → **7/week**. Over
+7 weeks: **245** full IFAKs and **49** Compacts. **Both** kits contain one
+black C-A-T and one HyFin twin pack — summing across every kit that uses a
+part is the whole point; miss the Compact and both lines below are wrong.
 
 **Line 1 — 30-0001, C-A-T tourniquet, black. Class: forecast.** This part
 points in two directions: it has a *sales* ASIN (you sell it standalone on
-Amazon; placeholder TBD-ASIN-1 until pulled from the live listing) and a
-*purchase* ASIN (it can also be bought on Amazon Business; placeholder
-TBD-ASIN-2).
+Amazon) and a *purchase* ASIN (it can also be bought on Amazon Business).
 Only the **sales** side drives demand — velocity comes from what customers
 buy; the purchase ASIN is just a way to acquire it and creates no demand.
-- Standalone sales: 50/week (40 FBA + 8 FBM + 2 Shopify). Over 10 weeks: **500**.
-- Kit sales: the four IFAK colourways (IFAK-CAT-BLACK, -GREEN, -COYOTE,
-  -MULTICAM) sell 37/week combined, each containing one black C-A-T.
-  Over 10 weeks: **370**.
-- Safety stock: 2 weeks × (50 + 37) = **174**.
-- Raw requirement: 500 + 370 + 174 = **1,044**.
-- You already have: 350 on the shelf, 200 on order at NAR, 100 in transit
-  to Amazon = 650. Still needed: 1,044 − 650 = **394**.
-- NAR's rule: minimum 400, then steps of 200. 394 is under the minimum, so
-  **order 400**. (Had it been 410, Shannon orders **600** — she always
-  rounds up, never down to 400, because 10 short on tourniquets is worse
-  than 190 spare. The report shows raw and rounded side by side.) For the
-  other rule: a HyFin chest-seal need of 810 becomes **900** — minimum 750,
-  then steps of 150, so 750 → 900.
+- Standalone sales: 540 units in 90 days → 42/week. Over 7 weeks: **294**.
+- Kit sales: full IFAKs 245 × 1 = 245, **plus** Compacts 49 × 1 = 49,
+  together **294**.
+- Raw requirement: 294 + 294 = **588**.
+- You already have: 100 on the shelf, 60 on order at NAR (one confirmation
+  email in Gmail with no shipping notification), 0 in transit = 160.
+  Still needed: 588 − 160 = **428**.
+- NAR's rule: minimum 400, then steps of 200. 428 is over the minimum, so
+  round up one step: **600**. Already a multiple of 5, and NAR sells
+  singles, so **600 goes in the cart**. (The report shows raw and rounded
+  side by side.)
 
-**Line 2 — Dynarex 3161, sterile krinkle gauze. Class: reorder_point.**
-No forecast. On the shelf plus on order: 240; threshold 300 (your number,
-in config). 240 < 300, so it goes on the gap list: "gauze low — top up to
-600 (target) − 240 = **360**", with its Dynarex item number and Amazon
-purchase link. Shannon cannot order it; she flags it.
+**Line 2 — 10-0042, HyFin chest-seal twin pack. Class: forecast.**
+Standalone 270 units in 90 days → 21/week → **147** over 7 weeks; kits add
+245 + 49 = **294**; raw requirement **441**. Minus 54 on the shelf =
+**387**. HyFin's rule is minimum 750, steps of 150 — 387 is under the
+minimum, so **order 750**.
 
-**Line 3 — wall mount for the Essential (Wall Mounted) kit. Class:
+**Line 3 — ZZ-0034, nasopharyngeal airway. Class: forecast, and the pack
+example.** You buy it, you don't resell it — purchase side only, no sales
+ASIN, so no standalone demand. Only the full IFAK uses it: **245** needed.
+You hold about 118 loose (assumed here for round numbers): 245 − 118 =
+**127**, rounded up to the nearest 5 = **130 airways**. NAR sells it as a
+**two-pack**, so the cart line is 130 ÷ 2 = **65 packs** (which is 130
+airways — never 130 packs).
+
+**Line 4 — Dynarex 3161, sterile krinkle gauze. Class: reorder_point.**
+(It's in the Essential and Express kits — not the IFAK.) No forecast. On
+the shelf plus on order: 80; threshold 100 (your number, in config).
+80 < 100, so top up to the target: 400 − 80 = **320**. Dynarex supports
+cart staging, so with your approval this becomes a staged dynarex.com
+cart — staged, never checked out.
+
+**Line 5 — wall mount for the Essential (Wall Mounted) kit. Class:
 non_stocked.** In the kit's parts list so the kit's contents and cost are
 right, but you don't stock or reorder it. Purchase quantity: **0**, always.
 For "can we build kits?" it is treated as never the limiting part. If this
 class were missing, the kit's first order would recommend buying wall
-mounts you don't want — that's why the class is mandatory.
+mounts you don't want — that's why the class is mandatory. (The build
+check does name each kit's real limiting part — today the Coyote and
+Multicam IFAKs are blocked by zero pouch stock, parking-lot item PL-1.)
 
 ## What happens when something breaks
 
@@ -159,11 +213,12 @@ report it. A failed run costs a week's convenience, never money.
 
 ## Honest limitations
 
-- Forecasts are trailing averages: no seasonality, no trend. Safety stock
-  is the buffer until real error data says otherwise.
+- Forecasts are trailing 90-day averages: no seasonality, no trend — your
+  process says demand is steady year-round, and the 4-week buffer inside
+  the cover target is the cushion.
 - Walmart is wired in but silent until it has sales history.
 - Kit assembly labour (Angie and Stephanie's hands) is noted, not modelled.
-  "Build 324 kits" is arithmetic, not a staffing plan, in v1.
+  "Build 125 kits" is arithmetic, not a staffing plan, in v1.
 - The kit recipes live in a config file. If a recipe changes and the file
   isn't updated, the math is confidently wrong. Every report prints the
   recipe version so drift is visible, but keeping it current is a human

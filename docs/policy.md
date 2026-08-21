@@ -88,6 +88,8 @@ rules:
   # ---- Tier 2: reaches outside the company / any purchase action ----
   - action: nar.stage_cart                # stage the weekly NAR order cart
     tier: 2
+  - action: dynarex.stage_cart            # stage the dynarex.com cart (never checkout)
+    tier: 2
   - action: notify.email                  # send Zach the reorder report
     tier: 2
   - action: fba.create_inbound_plan       # create an FBA inbound shipment plan

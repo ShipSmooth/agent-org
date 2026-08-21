@@ -14,10 +14,11 @@ date-versioned, with an `aliases` map joining each kit to its
 channel-specific SKUs (including the Veeqo FBA simple product). Veeqo FBM
 bundles are read only as a weekly cross-check; disagreement raises a
 data-quality warning and config wins. A kit selling with no BOM entry is a
-hard run failure. Seven kits, 61 BOM lines today, including both
-own-assembled IFAKs: the full IFAK with CAT Gen 7 & HyFin (four colourway
-SKUs: IFAK-CAT-BLACK/-GREEN/-COYOTE/-MULTICAM; 13 lines) and the Compact
-IFAK Trauma Kit (6 lines, different carrier). Every BOM line carries the
+hard run failure. The real file is committed at `config/ithrive/boms.yaml`
+(bom_version 2026-08-20): seven kits, 83 BOM lines, 122 records once the
+four full-IFAK colourways (IFAK-CAT-BLACK/-GREEN/-COYOTE/-MULTICAM) are
+expanded; the Compact IFAK Trauma Kit (IFAK-CAT-COMPACT, black only) uses
+a different carrier. Every BOM line carries the
 component's `(supplier, supplier_part_number)` identity and its required
 class; `non_stocked` lines stay in the BOM for kit description and cost
 but never produce a purchase.

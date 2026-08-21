@@ -35,10 +35,15 @@ CREATE TABLE components (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entity_id      TEXT NOT NULL REFERENCES entities(id),
     supplier_id    UUID NOT NULL REFERENCES suppliers(id),
-                   -- required; 'pending' is a supplier row with capability
-                   -- {pending}, never NULL and never a silent default.
-                   -- Config load fails loudly on a pending supplier whose
-                   -- component class routes to any purchase path.
+                   -- required; never NULL and never a silent default.
+                   -- Three distinct no-supplier states are supplier rows:
+                   --   'pending'   unresolved, must be fixed — config load
+                   --               fails loudly if its class routes to any
+                   --               purchase path (zero rows today)
+                   --   'internal'  stock held loose, no supplier attached
+                   --               yet — reports/prompts only (HMZ-0001)
+                   --   'unsourced' deliberately open, permanently — prompt
+                   --               Zach, never pick a supplier (gloves)
     supplier_part_no TEXT NOT NULL,
                    -- '30-0001' (NAR), '3161' (Dynarex), 'B00006IFHD' (ASIN)
                    -- are all valid values; the supplier selects the
@@ -54,6 +59,14 @@ CREATE TABLE components (
                                                  -- Business; builds the staged cart
     moq_min        INT NOT NULL DEFAULT 0,       -- forecast class only
     moq_increment  INT NOT NULL DEFAULT 1 CHECK (moq_increment >= 1),
+    units_per_purchase_unit INT CHECK (units_per_purchase_unit >= 1),
+                   -- REQUIRED (default 1); NULL only while discovery mode
+                   -- (pack_size_policy: discover_and_confirm) awaits Zach's
+                   -- confirmation of the value read from the live listing.
+                   -- Demand math runs in sellable units; carts/POs use
+                   -- purchase_units = ceil(order_units / this). A live-
+                   -- listing mismatch halts the line (docs/replenishment.md §6.1).
+    purchase_unit_name TEXT,                     -- free text for reports, e.g. 'box of 200'
     reorder_point  INT,                          -- reorder_point class only
     reorder_target INT,
     cover_target_weeks  NUMERIC(4,1),            -- NULL = entity default
@@ -98,6 +111,11 @@ CREATE TABLE boms (
     kit_group     TEXT NOT NULL,                 -- matches products.kit_group
     component_id  UUID NOT NULL REFERENCES components(id),
     qty           INT NOT NULL CHECK (qty > 0),
+    channels      TEXT[],                        -- NULL = consumed on every channel;
+                                                 -- '{fba}' = consumed from the FBA
+                                                 -- inbound plan (fba_send), not total
+                                                 -- sales — FBA-prep lines
+                                                 -- (docs/replenishment.md §2.1.1)
     bom_version   TEXT NOT NULL,                 -- date stamp from config
     UNIQUE (entity_id, kit_group, component_id, bom_version)
 );

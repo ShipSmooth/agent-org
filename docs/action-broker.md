@@ -68,7 +68,8 @@ Reversal is itself a proposal (audited, tiered), never an ad-hoc call.
 | action_type | Reversible? | Strategy |
 |---|---|---|
 | `amazon_business.stage_cart` | Yes | The cart is a constructed URL from `purchase_asin`s; discard it. Nothing to undo at Amazon. |
-| `nar.stage_cart` | Yes | `nar.clear_cart` — browser automation empties the staged cart. Harmless even half-done; a cart costs nothing. |
+| `nar.stage_cart` | Yes | `nar.clear_cart` — browser automation removes the lines Shannon added (a pre-existing cart's contents are left alone). Harmless even half-done; a cart costs nothing. |
+| `dynarex.stage_cart` | Yes | `dynarex.clear_cart` — same as NAR: remove only the lines Shannon added. |
 | `notify.email` / `notify.sms` | No | Cannot unsend. Mitigation: correction message referencing the original's proposal id. This irreversibility is why anomalous notifications are still tiered, not free. |
 | `fba.create_inbound_plan` (future) | Partly | Cancel the plan/shipment in Seller Central before carrier pickup; after pickup, irreversible → the *creation* is Tier 2 and flagged irreversible-after-pickup in the approval. |
 | `shopify.update_product` (future) | Yes | Payload stores the prior field values; reversal writes them back. |

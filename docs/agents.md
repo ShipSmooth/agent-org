@@ -39,10 +39,15 @@ after, recipients include the fulfilment lead).
 - `veeqo.read_inventory`, `veeqo.read_orders`, `veeqo.read_fba_inbound` (Tier 0)
 - `shopify.read_products` (Tier 0, BOM cross-check only — Shopify stock
   numbers are placeholders and are never read as inventory)
+- `gmail.read_order_signals` (Tier 0 — the authoritative `on_order`
+  source; a read failure or ambiguous signal fails the run, exactly like
+  a Veeqo failure. The narescue.com order-status field is never read.)
+- `nar.read_order_history` (Tier 0 — order numbers and per-line
+  quantities only, never the status field)
 - `internal.*` state writes (Tier 1)
 - `amazon_business.stage_cart` (Tier 1, ops-consumable cart URL)
-- `nar.stage_cart` (Tier 2), `notify.email` (Tier 2), `notify.sms`
-  (Tier 2, urgent/anomalous only)
+- `nar.stage_cart` (Tier 2), `dynarex.stage_cart` (Tier 2), `notify.email`
+  (Tier 2), `notify.sms` (Tier 2, urgent/anomalous only)
 
 **Tiers she can reach:** 0–2 by rule; her proposals escalate to Tier 3 on
 the anomaly triggers in docs/policy.md.
@@ -52,16 +57,24 @@ the anomaly triggers in docs/policy.md.
 - Any anomaly trigger firing (Tier 3 path).
 - A kit selling with no BOM entry; a component with a pending supplier or
   (impossible past config load) missing class; Veeqo/config BOM
-  disagreement.
+  disagreement; a pack-size mismatch against the confirmed value (that
+  line halts and is flagged).
+- Low stock on an `internal` or `unsourced` component — she prompts,
+  never picks a supplier.
+- Gmail unavailable or ambiguous on outstanding NAR orders — she asks
+  which orders are still awaiting shipment; she never guesses.
 - Data-source failure after retries (run fails loudly).
 - NAR freight quotes (discovered at checkout, reported, never accepted).
 - Any build recommendation — assembly labour is human-planned in v1.
 
-**"Done" for a weekly run:** all reads succeeded and validated; every
+**"Done" for a weekly run:** `shannon validate-config` passed (plain-
+English errors, non-zero exit on bad config — see docs/replenishment.md
+§13); all reads succeeded and validated; every
 sellable SKU classified and computed; NAR draft PO staged after approval
 (with freight quote captured) or approval denied/expired; gap list
-persisted; report email delivered; every step in the audit log; task
-SUCCEEDED. A run that ends FAILED with a clear notification is an
+persisted; the parking lot (docs/replenishment.md §12) carried in the
+report with ages; report email delivered; every step in the audit log;
+task SUCCEEDED. A run that ends FAILED with a clear notification is an
 acceptable outcome; a run that guesses is not.
 
 **She must never:**
@@ -71,9 +84,16 @@ acceptable outcome; a run that guesses is not.
 - Call any integration except through the ActionBroker.
 - Use Shopify inventory quantities as stock, or any cached/stale value for
   on-hand.
-- Order from, or stage anything at, report-only suppliers (Dynarex, own
-  packaging) — gap list only. (Amazon Business cart *URLs* are the one
+- Check out, pay, or confirm an order anywhere — at NAR or Dynarex she
+  stages the cart and stops, always.
+- Order from, or stage anything at, report-only suppliers (World Richman,
+  own printed) — gap list only. (Amazon Business cart *URLs* are the one
   staging she may do below Tier 2, and they spend nothing.)
+- Read the narescue.com order-status field, or guess at outstanding
+  orders when Gmail is unavailable.
+- Put sellable-unit quantities in a cart — cart quantities are purchase
+  units, always (docs/replenishment.md §6.1).
+- Remove a parking-lot item — only Zach clears them.
 - Purchase, forecast, or count a `non_stocked` or `ops_consumable`
   component: non-stocked lines always resolve to purchase quantity 0;
   ops consumables exist only on the calendar-triggered reminder.

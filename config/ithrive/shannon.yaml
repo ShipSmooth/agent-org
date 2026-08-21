@@ -1,0 +1,45 @@
+# config/ithrive/shannon.yaml
+#
+# Shannon's per-entity parameters for iThrive Medical.
+#
+# Notification identities live HERE and nowhere else. Everything in code,
+# docs, and notification rules refers to ROLE NAMES; roles resolve to real
+# addresses/numbers per entity at send time. A role referenced by any rule
+# but unmapped here is a config-load failure (shannon validate-config),
+# never a silent drop. The indirection stays even though iThrive has
+# exactly one role today: adding an LLC or a second recipient later is a
+# config edit, not a search-and-replace through source.
+#
+# zach@ithrivemedical.com is the iThrive operating address — Shannon sends
+# from it and to it, using that mailbox's own SMTP credentials from env
+# (ITHRIVE_SMTP_*). zach@shipsmooth.com is a vendor/tooling identity and
+# receives no agent mail.
+
+identity:
+  from_name: "Shannon (iThrive Medical)"
+  from_address: zach@ithrivemedical.com    # SMTP credentials from env, ITHRIVE_ prefix
+
+recipients:
+  zach:
+    email: zach@ithrivemedical.com
+    sms: env:ZACH_SMS_NUMBER               # resolved as ITHRIVE_ZACH_SMS_NUMBER
+
+# ---- Replenishment parameters (docs/replenishment.md §9) ----
+parameters:
+  velocity_window_days: 90
+  cover_target_weeks: 7          # INCLUSIVE of lead time (3 NAR lead + 4 buffer)
+  safety_stock_weeks: 0          # the buffer lives inside cover_target_weeks
+  round_up_to_nearest: 5         # applied after MOQ rounding
+  mf_floor_weeks: 2              # REVIEW against real data before first live run
+  fba_cover_weeks: 8             # REVIEW against real data before first live run
+
+# ---- Ops-consumable reminder (docs/replenishment.md §4.1) ----
+ops_reminders:
+  cadence_weeks: 6
+  groups:
+    shipping_supplies:
+      recipients: [zach]
+      components:                # class must be ops_consumable
+        - {supplier: amazon_business, part: B0822QWLX2, name: "Shipping tape, 3in"}
+        - {supplier: amazon_business, part: B075H3DKLR, name: "Corrugated box 10x10x10"}
+        - {supplier: amazon_business, part: B07PKBC69M, name: "Bubble mailer 6.5x10in"}

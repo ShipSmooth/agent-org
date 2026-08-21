@@ -26,17 +26,27 @@ suppliers_config: config/ithrive/suppliers.yaml
 boms_config: config/ithrive/boms.yaml
 shannon_config: config/ithrive/shannon.yaml
 policy_config: config/ithrive/policy.yaml     # inherits global defaults
-notifications:
-  email: zach@shipsmooth.com
-  sms: env:ZACH_SMS_NUMBER
+# Notification addresses live in shannon_config (config/ithrive/shannon.yaml),
+# mapped from role names — never here, never in code. Each entity mails
+# from and to its own operating identity: iThrive uses
+# zach@ithrivemedical.com; zach@shipsmooth.com is a vendor/tooling
+# identity (it owns the GitHub org) and receives no agent mail.
 credentials_prefix: ITHRIVE_                  # see credential isolation
 books: quickbooks_online
 ```
 
 A definition carries: identity, status, timezone, the agents it runs and
 their schedules, its channels, paths to its per-entity configs (suppliers,
-BOMs, Shannon's parameters, policy overrides), notification targets,
-its credential prefix, and its accounting system. ShipSmooth exists as
+BOMs, Shannon's parameters, policy overrides), its credential prefix,
+and its accounting system. Notification identities are per-entity
+configuration too: `config/<entity>/shannon.yaml` maps **role names** to
+real addresses and SMS numbers, and everything else — code, docs,
+notification rules — refers only to roles, resolved per entity at send
+time. A role referenced by any rule but unmapped for that entity is a
+config-load failure, never a silent drop. iThrive today has exactly one
+role (`zach` → zach@ithrivemedical.com, both directions), and the
+indirection stays: adding an LLC or a second recipient later is a config
+edit, not a search-and-replace through source. ShipSmooth exists as
 `status: dormant` with an empty `agents:` list — defined, running nothing.
 Lima Zulu is registered with no agents until later phases (note for then:
 Voly has no API, so its data path will be export-driven).
@@ -79,7 +89,9 @@ Every per-entity credential is namespaced by the entity's
 through the entity's prefix and **refuses to start** an entity whose
 declared credentials are missing — and refuses to hand entity A's loader an
 entity-B-prefixed variable. Shared infrastructure credentials (Postgres,
-SMTP, SMS) are unprefixed. No credential is ever stored in the database.
+the Twilio SMS transport) are unprefixed; SMTP is **per-entity** — each
+entity mails from its own operating identity's mailbox
+(`ITHRIVE_SMTP_*`), part of corporate separateness between the LLCs. No credential is ever stored in the database.
 
 ## Memory partitioning
 
@@ -97,8 +109,10 @@ the repo, not the database.
    config: `INSERT ... ON CONFLICT DO NOTHING` into `entities`).
 3. Add the entity's credentials to the host `.env` under its prefix
    (`NEWCO_VEEQO_API_KEY=`, …) per `.env.example`.
-4. Add its per-entity config files (suppliers, BOMs, Shannon parameters,
-   policy overrides) under `config/newco/`.
+4. Add its per-entity config files (suppliers, BOMs, Shannon parameters
+   including its role→address map, policy overrides) under `config/newco/`.
+   No address is touched anywhere in source — recipients are role names
+   resolved from `config/newco/shannon.yaml`.
 5. `docker compose restart worker scheduler`.
 
 No migration, no new table, no Python change. RLS policies reference the

@@ -32,7 +32,10 @@ supplier per docs/supplier-model.md; propose (a) staging the NAR cart and
 (b) the report email, both Tier 2, through the ActionBroker. Separately:
 emit the ops-consumable reminder report (Tier 0) on its cadence and offer
 to stage the Amazon Business cart from its purchase ASINs (Tier 1, notify
-after, recipients include the fulfilment lead).
+after). Everything she sends goes to Zach alone, to and from
+zach@ithrivemedical.com — resolved from the `zach` role in
+`config/ithrive/shannon.yaml`, never a hard-coded address. His ShipSmooth
+address is a vendor/tooling identity and receives no agent mail.
 
 **Tools** (each a broker action or a read client, nothing else):
 

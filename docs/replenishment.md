@@ -243,8 +243,10 @@ cart-staging machinery with the forecast path:
 - Offers to stage an Amazon Business cart built from those ASINs.
 - Tiers: the report/draft is **Tier 0** (it neither spends nor reaches an
   outside party); staging the cart is **Tier 1**, notify after.
-- Recipient list is configurable per component group *(param)* — the
-  fulfilment lead receives this one, not only Zach.
+- Recipient list is configurable per component group *(param)*. Recipients
+  are **role names**, never addresses; roles resolve per entity at send
+  time via `config/<entity>/shannon.yaml` (§13). For iThrive every role
+  today maps to Zach alone.
 
 ```yaml
 # config/<entity>/shannon.yaml (excerpt)
@@ -252,7 +254,7 @@ ops_reminders:
   cadence_weeks: 6
   groups:
     shipping_supplies:
-      recipients: [zach, fulfilment_lead]
+      recipients: [zach]
       components:                    # class must be ops_consumable
         - {supplier: amazon_business, part: B0822QWLX2, name: "Shipping tape, 3in"}
         - {supplier: amazon_business, part: B075H3DKLR, name: "Corrugated box 10x10x10"}
@@ -675,6 +677,11 @@ stack traces**. Checks:
 - Every kit alias maps to a real channel SKU (the `TODO` FBA aliases fail
   until PL-8 is resolved).
 - `reorder_point ≤ reorder_target` (warning).
+- Every recipient role referenced by any notification rule (email or SMS)
+  is mapped to a real address/number for this entity in
+  `config/<entity>/shannon.yaml` — an unmapped role is a **config-load
+  failure**, never a silent drop. A report that silently goes nowhere is
+  worse than a run that refuses to start.
 
 It prints the `bom_version`, and every report opens with a one-line
 summary of config changes since the last run.

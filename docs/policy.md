@@ -138,7 +138,7 @@ thresholds:
 | Update a Shopify product description | Tier 2. |
 | Write computed velocities to the database | Tier 1, in the next digest. |
 | Emit the 6-weekly ops-consumable reminder report (with purchase ASINs) | Tier 0 — a draft that spends nothing. |
-| Stage the Amazon Business cart from that report's ASINs | Tier 1 — executes, fulfilment lead and Zach notified after. |
+| Stage the Amazon Business cart from that report's ASINs | Tier 1 — executes, Zach notified after (the `zach` role, resolved per entity from `config/<entity>/shannon.yaml`). |
 | Read Veeqo inventory | Tier 0, silent. |
 | Anything not matching a rule (e.g. a future agent invents `qbo.create_bill`) | **Tier 3 by default-deny.** |
 

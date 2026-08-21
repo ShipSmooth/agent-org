@@ -82,8 +82,8 @@ startup rather than sneaking into a purchase path:
   In no kit, tracked nowhere, so Shannon has no data and doesn't pretend
   otherwise: a calendar nudge every 6 weeks (configurable) lists each item
   with its Amazon purchase link and offers to stage a cart. The report is
-  Tier 0; staging the cart is Tier 1. It goes to the fulfilment lead too,
-  not only you.
+  Tier 0; staging the cart is Tier 1. Like everything Shannon sends, it
+  goes to you alone, at zach@ithrivemedical.com.
 
 Suppliers matter as much as classes: fewer than half the kit component
 lines come from NAR (the real parts list is committed at

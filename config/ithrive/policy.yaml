@@ -1,0 +1,11 @@
+# config/ithrive/policy.yaml — per-entity overrides, inheriting global.
+#
+# An entity file may override thresholds and ADD rules. It may not delete a
+# global rule, and it may not lower a global rule's tier — the loader
+# refuses either (docs/policy.md).
+
+version: 1
+thresholds:
+  tier3_escalation:
+    absolute_total_usd: 75000   # explicit even when equal to global — self-documenting
+# A typical NAR order is $15k-$65k, so the $75k line is a real anomaly bar.

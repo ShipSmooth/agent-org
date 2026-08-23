@@ -1,0 +1,51 @@
+# config/entities/ithrive.yaml
+#
+# The entity registry entry for iThrive Medical. Adding an LLC is a new file
+# here plus its config/<entity>/ directory — never a code change
+# (docs/multi-entity.md).
+
+entity_id: ithrive
+legal_name: iThrive Medical LLC
+status: active
+timezone: America/New_York
+
+agents:
+  - name: shannon
+    kind: shannon_replenishment
+    schedule: "cron: 0 6 * * MON"
+  - name: shannon
+    kind: shannon_ops_reminder
+    schedule: "every: 6 weeks"
+
+# `key` is the short name used in boms.yaml — kit `aliases:` keys and BOM
+# `channels:` filters. Channels are data: a new channel is a line here.
+channels:
+  - name: amazon_fba
+    key: fba
+    fulfillment: fba
+    has_history: true
+  - name: amazon_fbm
+    key: fbm
+    fulfillment: merchant
+    has_history: true
+  - name: shopify
+    key: shopify
+    fulfillment: merchant
+    has_history: true
+  - name: walmart_sf
+    key: walmart_sf
+    fulfillment: merchant
+    has_history: false      # approved, zero history — silent until it has sales
+  - name: walmart_wfs
+    key: walmart_wfs
+    fulfillment: wfs
+    has_history: false
+
+suppliers_config: config/ithrive/suppliers.yaml
+boms_config: config/ithrive/boms.yaml
+shannon_config: config/ithrive/shannon.yaml
+policy_config: config/ithrive/policy.yaml
+
+# Notification addresses live in shannon_config, mapped from role names.
+credentials_prefix: ITHRIVE_
+books: quickbooks_online

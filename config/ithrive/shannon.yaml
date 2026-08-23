@@ -32,6 +32,15 @@ parameters:
   round_up_to_nearest: 5         # applied after MOQ rounding
   mf_floor_weeks: 2              # REVIEW against real data before first live run
   fba_cover_weeks: 8             # REVIEW against real data before first live run
+  walmart_reserve_units: 0       # Walmart is approved with zero history: reserve nothing
+  box_min: 5                     # FBA box planning: fewest boxes to consider
+  box_max: 10                    # and the most
+  overship_tolerance: 0          # units the box plan may exceed the send quantity by
+
+# ---- Run budgets (docs/architecture.md §5) ----
+# A task exceeding either budget is killed and reported, never left hanging.
+  task_wall_clock_budget_seconds: 1800
+  task_step_budget: 200
 
 # ---- Ops-consumable reminder (docs/replenishment.md §4.1) ----
 ops_reminders:

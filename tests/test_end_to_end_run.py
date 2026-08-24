@@ -106,10 +106,30 @@ def live_config_report(
 
 
 def test_the_live_configuration_produces_a_report(live_config_report: str) -> None:
-    assert "BOM version: 2026-08-21" in live_config_report
+    assert "BOM version: 2026-08-24" in live_config_report
     assert "PHASE 1 — READ ONLY" in live_config_report
     # Twelve kits, including the new wall-mounted Express kit.
     assert "25-002" in live_config_report
+
+
+def test_a_delisted_kit_survives_the_whole_run_as_suppressed(
+    live_config_report: str,
+) -> None:
+    """End to end, not in isolation: 25-010 is inactive on both Amazon
+    channels, and the history fixture reaches back to before it came down.
+    It must still be in the report, marked, and parked for a decision."""
+    assert "DEMAND SUPPRESSED" in live_config_report
+    assert "historical, before it came down" in live_config_report
+    assert "AUTO-25-010" in live_config_report
+
+
+def test_amazon_sales_are_joined_on_amazons_own_sku(live_config_report: str) -> None:
+    """The sample exports key Amazon rows by Amazon's SKUs, which look
+    nothing like Zach's. If the join broke, those sales would vanish rather
+    than fail loudly, so both sides are asserted: the FBA prep charged
+    against 30-0001's Amazon sales, and an ASIN carried as description."""
+    assert "30-0001: 6 per box" in live_config_report
+    assert "listed on Amazon under: B006X64PIS" in live_config_report
 
 
 def test_the_largest_pack_size_shows_its_overage_rather_than_absorbing_it(

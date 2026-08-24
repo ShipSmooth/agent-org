@@ -203,10 +203,29 @@ def test_the_sending_target_is_step_8s_28_not_the_stale_240(
     plan = result.box_plan
     assert plan is not None
     assert 5 <= plan.boxes <= 10
-    # Equal boxes cannot hit 28 exactly inside 5–10 boxes; the planner takes
-    # the closest whole-box fit rather than overshipping.
+    # 28 alone would pack exactly as 7 × 4, but the Compact IFAK's 5 units ride
+    # in the same shipment and one box count serves both: at 7 boxes the
+    # Compact line can send nothing (7 × 1 overships its 5), so 5 boxes — 25
+    # full IFAK plus all 5 Compact — is the smaller total error.
+    assert plan.boxes == 5
     assert plan.planned("IFAK-CAT") == 25
+    assert plan.planned("IFAK-CAT-COMPACT") == 5
     assert plan.error == 3
+
+
+def test_a_lone_28_unit_line_packs_exactly_as_7_boxes_of_4() -> None:
+    """The 28 held no units back for want of a better fit — only for company.
+
+    Asked on its own, the planner finds the exact answer: 7 × 4 = 28, error
+    nothing. The tie-break toward fewer boxes applies to ties, and zero error
+    is not a tie. A regression here would quietly hold stock back from FBA.
+    """
+    plan = plan_boxes({"IFAK-CAT": 28}, box_min=5, box_max=10, overship_tolerance=0)
+    assert plan is not None
+    assert plan.boxes == 7
+    assert [line.per_box for line in plan.lines] == [4]
+    assert plan.planned("IFAK-CAT") == 28
+    assert plan.error == 0
 
 
 def test_a_240_unit_shipment_packs_as_5_boxes_of_48() -> None:

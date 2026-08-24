@@ -117,6 +117,30 @@ class VeeqoFixtureClient:
             )
         return velocities
 
+    def read_velocity_history(self) -> dict[str, SalesVelocity]:
+        """A longer window, used only to say what a suppressed line used to
+        sell. Absent history is absent, never zero: the file is optional and
+        an empty result means Shannon says the history does not reach back.
+        """
+        path = self.fixture_dir / "velocity_history.json"
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        window = int(data["window_days"])
+        history: dict[str, SalesVelocity] = {}
+        for row in data["rows"]:
+            sku = str(row["sku"])
+            history[sku] = SalesVelocity(
+                sku=sku,
+                units_sold=first_value(row["units_sold"]),
+                window_days=window,
+                by_channel={
+                    str(channel): first_value(units)
+                    for channel, units in row.get("by_channel", {}).items()
+                },
+            )
+        return history
+
     def read_fba_inbound(self) -> dict[str, InboundShipment]:
         data = self._load("fba_inbound.json")
         shipments: dict[str, InboundShipment] = {}

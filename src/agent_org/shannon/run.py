@@ -23,7 +23,11 @@ from agent_org.broker.broker import ActionBroker, BrokerOutcome
 from agent_org.config.errors import ConfigError, Severity
 from agent_org.config.models import LoadedConfig
 from agent_org.config.validate import ValidationResult, validate
-from agent_org.integrations.reads import InventoryReader, OrderSignalReader
+from agent_org.integrations.reads import (
+    HistoricalVelocityReader,
+    InventoryReader,
+    OrderSignalReader,
+)
 from agent_org.shannon.calculator import ReplenishmentCalculator, ReplenishmentResult
 from agent_org.shannon.config_diff import ConfigSnapshot, describe_changes
 from agent_org.shannon.report import ReportContext, render
@@ -87,6 +91,11 @@ class Shannon:
         self.budget.step("reading inbound Amazon shipments")
         signals = self.orders.read_order_signals()
         self.budget.step("reading outstanding orders from Gmail")
+        history = (
+            self.inventory.read_velocity_history()
+            if isinstance(self.inventory, HistoricalVelocityReader)
+            else {}
+        )
 
         result = ReplenishmentCalculator(
             config=self.config,
@@ -94,6 +103,7 @@ class Shannon:
             velocity=velocity,
             inbound=inbound,
             on_order=signals.on_order,
+            historical_velocity=history,
         ).calculate()
         self.budget.step("working out what to order")
 

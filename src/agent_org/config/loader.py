@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_org.config.errors import ConfigError, Finding, error
+from agent_org.config.listings import EMPTY, load_listings
 from agent_org.config.models import (
     AgentSchedule,
     BomConfig,
@@ -147,6 +148,7 @@ def load_entity(paths: ConfigPaths, entity_id: str) -> EntityConfig:
         boms_config=str(raw.get("boms_config", "")),
         shannon_config=str(raw.get("shannon_config", "")),
         policy_config=str(raw.get("policy_config", "")),
+        listings_config=str(raw.get("listings_config", "")),
     )
 
 
@@ -278,9 +280,15 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
                     fix="Delete one of the two entries.",
                 )
             )
+        internal_reference = bool(entry.get("part_is_internal_reference", False))
+        # A component whose part number is ours cannot fall back to it as a
+        # name: that is exactly the mistake that would put an invented SKU on
+        # a purchase order. Missing name stays missing, and validate-config
+        # says so.
+        default_name = "" if internal_reference else component_key.part
         components[component_key] = Component(
             key=component_key,
-            name=str(entry.get("name", component_key.part)),
+            name=str(entry.get("name", default_name)),
             component_class=component_class,
             units_per_purchase_unit=_int_or_none(entry.get("units_per_purchase_unit")),
             purchase_unit_name=_str_or_none(entry.get("purchase_unit_name")),
@@ -291,6 +299,7 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
             purchase_asin=_str_or_none(entry.get("purchase_asin"))
             or (component_key.part if component_key.supplier == "amazon_business" else None),
             sales_asin=_str_or_none(entry.get("sales_asin")),
+            part_is_internal_reference=internal_reference,
             cover_target_weeks=_fraction_or_none(entry.get("cover_target_weeks")),
             safety_stock_weeks=_fraction_or_none(entry.get("safety_stock_weeks")),
             loc=entry.loc,
@@ -559,8 +568,13 @@ def load_config(config_root: Path, entity_id: str) -> tuple[LoadedConfig, list[F
         paths.policy_global(),
         paths.resolve(entity.policy_config) if entity.policy_config else None,
     )
+    # Amazon identity is optional config: an entity that does not sell on
+    # Amazon has no listings file, and everything falls back to internal SKUs.
+    listings = (
+        load_listings(paths.resolve(entity.listings_config)) if entity.listings_config else EMPTY
+    )
     return (
-        LoadedConfig(entity=entity, boms=boms, shannon=shannon, policy=policy),
+        LoadedConfig(entity=entity, boms=boms, shannon=shannon, policy=policy, listings=listings),
         findings,
     )
 

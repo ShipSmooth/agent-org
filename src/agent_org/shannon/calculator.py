@@ -21,9 +21,11 @@ the arithmetic can be reproduced:
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from fractions import Fraction
 
+from agent_org.config.listings import ListingSet
 from agent_org.config.models import (
     Capability,
     Component,
@@ -192,7 +194,52 @@ class ComponentPlan:
     reorder_point: int | None = None
     reorder_target: int | None = None
     available: int | None = None
+    # True where the part number is ours because the supplier publishes none.
+    # Such a line is ordered by name; printing the reference as if it were a
+    # supplier SKU is how a purchase order ends up quoting an invented number.
+    part_is_internal_reference: bool = False
+    # Descriptive only, so a human recognises the listing. Never a join key.
+    sales_asins: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
+
+    @property
+    def order_by(self) -> str:
+        """What to write on a purchase order for this line."""
+        return self.name if self.part_is_internal_reference else self.key.part
+
+
+@dataclass(frozen=True)
+class SuppressedDemand:
+    """A line whose sales figure measures the listing, not the demand.
+
+    Zach deactivates a listing when he is out of stock, which sends sales
+    to zero, which sends a trailing average to zero, which would order
+    nothing and keep him out of stock. Shannon will not forecast such a
+    line: she says so, gives whatever history reaches back past the
+    deactivation, and puts the decision in front of Zach.
+    """
+
+    subject: str
+    name: str
+    kind: str  # "kit" or "component"
+    channels: tuple[str, ...]
+    current_weekly: Fraction
+    historical_weekly: Fraction | None
+    historical_window_days: int | None
+
+    @property
+    def has_history(self) -> bool:
+        return self.historical_weekly is not None
+
+
+@dataclass(frozen=True)
+class ParkingLotAddition:
+    """Something only Zach can decide, raised by this run rather than by config."""
+
+    id: str
+    item: str
+    detail: str
+    blocks: str
 
 
 @dataclass(frozen=True)
@@ -215,6 +262,8 @@ class ReplenishmentResult:
     gap_list: tuple[GapListEntry, ...]
     box_plan: BoxPlan | None
     fba_send_targets: dict[str, int]
+    suppressed: tuple[SuppressedDemand, ...] = ()
+    parking_lot_additions: tuple[ParkingLotAddition, ...] = ()
     warnings: tuple[str, ...] = ()
     notes: tuple[str, ...] = field(default_factory=tuple)
 
@@ -232,6 +281,24 @@ class ReplenishmentResult:
         raise KeyError(f"No kit plan for {family} in this run.")
 
 
+def _parking_lot_for(suppressed: Sequence[SuppressedDemand]) -> tuple[ParkingLotAddition, ...]:
+    """Suppressed lines go straight to the parking lot: only Zach can decide
+    whether to restock and relist, and the decision must not wait for him to
+    notice a missing line."""
+    return tuple(
+        ParkingLotAddition(
+            id=f"AUTO-{item.subject}",
+            item=f"Decide whether to restock and relist {item.subject} ({item.name})",
+            detail=(
+                "Every listing is inactive, so recent sales measure the listing "
+                "rather than the demand. Shannon will not forecast it."
+            ),
+            blocks=f"Any reorder of {item.subject}",
+        )
+        for item in suppressed
+    )
+
+
 class ReplenishmentCalculator:
     def __init__(
         self,
@@ -240,12 +307,17 @@ class ReplenishmentCalculator:
         velocity: dict[str, SalesVelocity],
         inbound: dict[str, InboundShipment],
         on_order: dict[str, int],
+        historical_velocity: dict[str, SalesVelocity] | None = None,
     ) -> None:
         self.config = config
         self.stock = stock
         self.velocity = velocity
         self.inbound = inbound
         self.on_order = on_order
+        # A longer window than the forecast one, used for nothing except
+        # saying what a suppressed line used to sell. It never feeds a
+        # forecast: a suppressed line is surfaced, never predicted.
+        self.historical_velocity = historical_velocity or {}
         self.params = config.shannon.parameters
         self.warnings: list[str] = []
         self._fba_channels = tuple(
@@ -266,16 +338,70 @@ class ReplenishmentCalculator:
             SalesVelocity(sku=sku, units_sold=0, window_days=self.params.velocity_window_days),
         )
 
+    def _sum_velocity(
+        self,
+        skus: Sequence[str],
+        label: str,
+        source: dict[str, SalesVelocity] | None = None,
+    ) -> SalesVelocity | None:
+        """Add up the sales of several channel SKUs into one figure.
+
+        One component can be listed several times — the C-A-T Gen 7 in
+        orange has two FBA SKUs and an FBM one — and several channel SKUs
+        can share an ASIN. Its demand is the sum; taking any single listing
+        would under-order it.
+        """
+        rows = source if source is not None else self.velocity
+        found = [rows[sku] for sku in skus if sku in rows]
+        if not found:
+            return None
+        by_channel: dict[str, int] = {}
+        for row in found:
+            for channel, units in row.by_channel.items():
+                by_channel[channel] = by_channel.get(channel, 0) + units
+        return SalesVelocity(
+            sku=label,
+            units_sold=sum(row.units_sold for row in found),
+            window_days=found[0].window_days,
+            by_channel=by_channel,
+        )
+
     def _standalone_velocity(self, key: ComponentKey, component: Component) -> SalesVelocity:
         """Standalone sales of a component.
 
-        Only the sales side drives demand. A component with a `sales_asin`
-        is sold under that listing; a `purchase_asin` says nothing about
-        how many Zach sells (docs/replenishment.md §10 step 2).
+        The join is the channel SKU, which is Zach's own and which Veeqo
+        keys on. The ASIN is not: NAR owns the C-A-T listings, three
+        colourways share them, and no title states a colour, so an ASIN
+        cannot say which product sold. It stays in the report for a human
+        to recognise and is never the key (docs/replenishment.md §5).
+
+        Only the sales side drives demand: a `purchase_asin` says nothing
+        about how many Zach sells (docs/replenishment.md §10 step 2).
         """
+        listing_set = self.config.listings.for_part(key.part)
+        if listing_set is not None and listing_set.channel_skus:
+            # Mapped: the sum over its channel SKUs is the answer, even when
+            # that sum is nothing. Reaching past it to an ASIN here is what
+            # would merge three colourways into one line.
+            summed = self._sum_velocity(listing_set.channel_skus, key.part)
+            if summed is not None:
+                return summed
+            return SalesVelocity(
+                sku=key.part, units_sold=0, window_days=self.params.velocity_window_days
+            )
         if component.sales_asin is not None and component.sales_asin in self.velocity:
+            # Unmapped, so the ASIN is all there is. It is a weaker key and
+            # only safe while nothing else claims it.
             return self.velocity[component.sales_asin]
         return self._velocity_of(key.part)
+
+    def _sales_asins(self, key: ComponentKey, component: Component) -> tuple[str, ...]:
+        """Every ASIN this component is listed under, for recognition only."""
+        listing_set = self.config.listings.for_part(key.part)
+        asins = list(listing_set.sales_asins) if listing_set is not None else []
+        if component.sales_asin is not None and component.sales_asin not in asins:
+            asins.append(component.sales_asin)
+        return tuple(asins)
 
     def _inbound_of(self, sku: str) -> int:
         shipment = self.inbound.get(sku)
@@ -332,9 +458,32 @@ class ReplenishmentCalculator:
                 first_channel[sku] = channel
         return tuple((channel, sku) for sku, channel in first_channel.items())
 
+    def _kit_sales_skus(self, kit: Kit) -> tuple[tuple[str, str], ...]:
+        """(channel, SKU) pairs to read sales against.
+
+        Amazon holds its own SKU for a kit and it looks nothing like the
+        internal one, so where listings.yaml names it, that is the join.
+        Channels it says nothing about — Shopify — keep the internal SKU.
+        Stock is a different question and stays on the internal SKU: that
+        is what Veeqo counts in the warehouse.
+        """
+        listing_set = self.config.listings.for_kit(kit.kit_group)
+        if listing_set is None:
+            return self._kit_skus(kit)
+        pairs = [
+            (listing.channel, listing.sku)
+            for listing in listing_set.listings
+            if listing.sku in self.velocity
+        ]
+        if not pairs:
+            return self._kit_skus(kit)
+        covered = {channel for channel, _ in pairs}
+        pairs += [(channel, sku) for channel, sku in self._kit_skus(kit) if channel not in covered]
+        return tuple(pairs)
+
     def _kit_channel_velocity(self, kit: Kit) -> dict[str, Fraction]:
         weekly: dict[str, Fraction] = {}
-        for channel_key, sku in self._kit_skus(kit):
+        for channel_key, sku in self._kit_sales_skus(kit):
             sales = self._velocity_of(sku)
             if sales.by_channel:
                 for channel, units in sales.by_channel.items():
@@ -381,18 +530,27 @@ class ReplenishmentCalculator:
                 member_demand = sum(per_kit.values(), Fraction(0)) * horizon
                 kit_demand[kit.kit_group] = member_demand
                 member_stock = 0
+                listing_set = self.config.listings.for_kit(kit.kit_group)
+                # Whether a kit sells on FBA is a fact about its listings, not
+                # about which internal alias happens to be filled in.
+                on_fba = any(
+                    listing.channel in self._fba_channels and listing.is_active
+                    for listing in (listing_set.listings if listing_set is not None else ())
+                )
                 for channel, sku in self._kit_skus(kit):
                     position = self._stock_of(sku)
                     warehouse += position.warehouse_available
                     fba_on_hand += position.fba_sellable
                     member_stock += position.warehouse_available + position.fba_sellable
-                    if channel in self._fba_channels:
+                    if channel in self._fba_channels or on_fba:
                         has_fba_alias = True
                         inbound += self._inbound_of(sku)
                 unresolved.extend(
                     f"{kit.kit_group} has no {channel} SKU"
                     for channel, sku in sorted(kit.aliases.items())
-                    if sku is None
+                    # listings.yaml is the authority on Amazon identity: where it
+                    # covers a kit, an internal TODO alias is not a gap (PL-8).
+                    if sku is None and listing_set is None
                 )
                 buildable, limiting, limiting_note = self._build_feasibility(kit)
                 builds.append(
@@ -572,6 +730,8 @@ class ReplenishmentCalculator:
             if gap is not None:
                 gaps.append(gap)
 
+        suppressed = self._suppressed_demand(kit_plans)
+
         box_plan = plan_boxes(
             fba_send_targets,
             box_min=self.params.box_min,
@@ -587,16 +747,98 @@ class ReplenishmentCalculator:
             gap_list=tuple(gaps),
             box_plan=box_plan,
             fba_send_targets=dict(fba_send_targets),
+            suppressed=suppressed,
+            parking_lot_additions=_parking_lot_for(suppressed),
             warnings=tuple(self.warnings),
         )
+
+    # ----------------------------------------------------- demand suppression
+
+    def _historical_weekly(self, listing_set: ListingSet, fallback: str) -> SalesVelocity | None:
+        """What this sold before the listing came down, where the history
+        reaches back that far. Never substituted for a forecast."""
+        if not self.historical_velocity:
+            return None
+        summed = self._sum_velocity(
+            listing_set.channel_skus, listing_set.subject, self.historical_velocity
+        )
+        if summed is None:
+            summed = self._sum_velocity([fallback], fallback, self.historical_velocity)
+        if summed is None or summed.units_sold <= 0:
+            return None
+        return summed
+
+    def _suppressed_demand(self, kit_plans: list[KitPlan]) -> tuple[SuppressedDemand, ...]:
+        """Every kit and component no customer can currently buy.
+
+        Out of stock → listing deactivated → sales zero → velocity zero →
+        nothing ordered → still out of stock. Breaking that loop is the
+        only reason this exists: such a line is reported as suppressed,
+        with whatever it used to sell, and never as a zero-demand item.
+        """
+        found: list[SuppressedDemand] = []
+        weekly_by_kit: dict[str, Fraction] = {}
+        for plan in kit_plans:
+            for member in plan.members:
+                kit = self.config.boms.kits.get(member.kit_group)
+                if kit is not None:
+                    weekly_by_kit[member.kit_group] = sum(
+                        self._kit_channel_velocity(kit).values(), Fraction(0)
+                    )
+        for kit_group, listing_set in sorted(self.config.listings.kits.items()):
+            if not listing_set.demand_is_suppressed:
+                continue
+            kit = self.config.boms.kits.get(kit_group)
+            history = self._historical_weekly(listing_set, kit_group)
+            found.append(
+                SuppressedDemand(
+                    subject=kit_group,
+                    name=kit.name if kit is not None else kit_group,
+                    kind="kit",
+                    channels=tuple(
+                        f"{listing.channel} {listing.sku}" for listing in listing_set.listings
+                    ),
+                    current_weekly=weekly_by_kit.get(kit_group, Fraction(0)),
+                    historical_weekly=history.weekly() if history is not None else None,
+                    historical_window_days=history.window_days if history is not None else None,
+                )
+            )
+        for part, listing_set in sorted(self.config.listings.components.items()):
+            if not listing_set.demand_is_suppressed:
+                continue
+            component = next(
+                (
+                    item
+                    for key, item in sorted(self.config.boms.components.items())
+                    if key.part == part
+                ),
+                None,
+            )
+            history = self._historical_weekly(listing_set, part)
+            found.append(
+                SuppressedDemand(
+                    subject=part,
+                    name=component.name if component is not None else part,
+                    kind="component",
+                    channels=tuple(
+                        f"{listing.channel} {listing.sku}" for listing in listing_set.listings
+                    ),
+                    current_weekly=self._standalone_velocity(component.key, component).weekly()
+                    if component is not None
+                    else Fraction(0),
+                    historical_weekly=history.weekly() if history is not None else None,
+                    historical_window_days=history.window_days if history is not None else None,
+                )
+            )
+        return tuple(found)
 
     def _standalone_allocations(self, fba_send_targets: dict[str, int]) -> dict[str, Allocation]:
         allocations: dict[str, Allocation] = {}
         for key, component in self.config.boms.components.items():
             if component.component_class is not ComponentClass.FORECAST:
                 continue
-            sales = self.velocity.get(component.sales_asin or key.part)
-            if sales is None:
+            sales = self._standalone_velocity(key, component)
+            if not sales.by_channel:
                 continue
             weekly_by_channel = {
                 channel: Fraction(units * 7, sales.window_days)
@@ -669,6 +911,8 @@ class ReplenishmentCalculator:
             name=component.name,
             component_class=component.component_class,
             supplier=key.supplier,
+            part_is_internal_reference=component.part_is_internal_reference,
+            sales_asins=self._sales_asins(key, component),
             standalone_units_sold=sales.units_sold,
             standalone_weekly=standalone_weekly,
             standalone_demand=standalone_demand,
@@ -739,6 +983,8 @@ class ReplenishmentCalculator:
             name=component.name,
             component_class=component.component_class,
             supplier=key.supplier,
+            part_is_internal_reference=component.part_is_internal_reference,
+            sales_asins=self._sales_asins(key, component),
             standalone_units_sold=0,
             standalone_weekly=Fraction(0),
             standalone_demand=Fraction(0),
@@ -772,6 +1018,8 @@ class ReplenishmentCalculator:
             name=component.name,
             component_class=component.component_class,
             supplier=key.supplier,
+            part_is_internal_reference=component.part_is_internal_reference,
+            sales_asins=self._sales_asins(key, component),
             standalone_units_sold=0,
             standalone_weekly=Fraction(0),
             standalone_demand=Fraction(0),

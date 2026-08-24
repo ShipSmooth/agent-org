@@ -178,7 +178,7 @@ saying so. This is what today's configuration produces:
 
 ```
 Configuration for iThrive Medical LLC (ithrive)
-BOM version: 2026-08-21
+BOM version: 2026-08-24
 Configuration fingerprint: 77aec4952c4d1415
 
 40 components, 12 kits, 9 suppliers, 5 sales channels.
@@ -248,7 +248,7 @@ That folder needs four files: `inventory.json`, `velocity.json`,
 
 ## 6. What to check in that first report
 
-Read these six things, in this order. If they are right, the report is
+Read these seven things, in this order. If they are right, the report is
 right.
 
 1. **The header says READ ONLY**, and that nothing was ordered, staged,
@@ -270,10 +270,27 @@ right.
    not, something in the parts list is wrong.
 5. **Build recommendations** name the part that runs out first for each
    colourway. That named part is what to chase.
-6. **The gap list and the parking lot.** The gap list is everything
+6. **DEMAND SUPPRESSED.** Everything whose Amazon listings are all
+   inactive is listed here rather than in the ordering list, because its
+   recent sales measure the listing and not the demand. Shannon gives the
+   figure from before the listing came down where the history reaches
+   back, and says plainly when it does not — she never puts zero there and
+   never forecasts these lines. Each one is also added to the parking lot,
+   because only you can decide whether to restock and relist. Kits with no
+   Amazon listing at all (20-314, 20-315, 25-002) are **not** here; their
+   Amazon zero is simply true.
+7. **The gap list and the parking lot.** The gap list is everything
    Shannon cannot order even in later phases — order it yourself. The
    parking lot is the open questions, carried week to week until you
    clear them.
+
+Two things you may not expect to see. Amazon sales are matched on
+**Amazon's own SKUs** (`Q3-MWFF-Y7P4` and the like), listed in
+`config/ithrive/listings.yaml`, never on your part numbers and never on
+the ASIN — three C-A-T colourways share ASINs that NAR owns, so the ASIN
+cannot say which colour sold. And the two Orca pouches print as a product
+name with "our reference" beside the code: Orca publishes no part numbers,
+so that code means nothing to them and must never go on an order.
 
 Anything Shannon could not calculate appears under **BLOCKED**, with the
 reason. She never guesses.

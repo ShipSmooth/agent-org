@@ -1,9 +1,10 @@
 {
   "_comment": [
     "Sample 90-day sales for the live parts list. Invented figures, real",
-    "SKUs. Weekly velocity is units_sold x 7 / 90, kept exact. No FBA",
-    "aliases are in the live file yet (parking-lot item PL-8), so every",
-    "row here is a merchant-fulfilled or Shopify sale."
+    "SKUs. Weekly velocity is units_sold x 7 / 90, kept exact.",
+    "Amazon rows are keyed by Amazon's own channel SKU, which is what",
+    "Veeqo reports and what listings.yaml maps; the internal SKU is used",
+    "only where Amazon holds no listing (Shopify and direct)."
   ],
   "window_days": 90,
   "rows": [
@@ -25,6 +26,11 @@
      "sku": "30-0001", "units_sold": 180},
     {"sku": "10-0042", "units_sold": 90},
     {"sku": "30-0052", "units_sold": 60},
-    {"sku": "XT600-OR-EN", "units_sold": 30}
+    {"sku": "XT600-OR-EN", "units_sold": 30},
+
+    {"_comment": "Amazon's own SKUs (listings.yaml). 30-0001 sells under two.",
+     "sku": "GK-VQI5-LWIS", "units_sold": 30, "by_channel": {"fba": 30}},
+    {"sku": "5G-AP1S-TUE4", "units_sold": 120, "by_channel": {"fbm": 120}},
+    {"sku": "Q3-MWFF-Y7P4", "units_sold": 60, "by_channel": {"fba": 60}}
   ]
 }

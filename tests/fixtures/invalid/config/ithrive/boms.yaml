@@ -113,6 +113,13 @@ components:
   - {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", name: "MOLLE pouch, Compact",
      class: reorder_point, units_per_purchase_unit: 1, reorder_point: 200, reorder_target: 1500}
 
+  # Broken on purpose: the part number is ours because the supplier publishes
+  # none, and there is no name — so there would be nothing to put on a
+  # purchase order except an identifier the supplier has never heard of.
+  - {supplier: world_richman, part: "TBD-NAMELESS-POUCH", class: reorder_point,
+     part_is_internal_reference: true, units_per_purchase_unit: 1,
+     reorder_point: 10, reorder_target: 20}
+
 kits:
 
   # The four colourways are one family: forecast, built and shipped together.

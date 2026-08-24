@@ -47,13 +47,33 @@ def test_the_live_config_has_no_errors() -> None:
     assert not result.errors, [finding.render() for finding in result.errors]
 
 
-def test_the_live_config_still_reports_the_unresolved_fba_aliases(
+def test_the_fba_aliases_are_no_longer_a_gap(real_findings: list[str]) -> None:
+    """PL-8 is closed: listings.yaml holds Amazon's own SKUs.
+
+    Amazon's SKUs cannot be derived from Zach's, so they could only ever
+    arrive as data. Now that they have, a kit whose BOM alias still says
+    TODO is not missing anything, and saying so every week would train him
+    to ignore the warnings that are real.
+    """
+    assert not [text for text in real_findings if "fba" in text and "TODO" in text]
+
+
+def test_the_three_kits_with_no_amazon_listing_are_not_reported_as_a_gap(
     real_findings: list[str],
 ) -> None:
-    # PL-8: real SKUs are not in yet. That under-counts sales, so it must be
-    # said out loud every run — but it does not stop the run.
-    matches = [text for text in real_findings if "fba" in text and "TODO" in text]
-    assert matches, "the unresolved FBA aliases were not reported at all"
+    """Structurally zero is a fact, not missing data (confirmed 24 Aug 2026)."""
+    for kit_group in ("20-314", "20-315", "25-002"):
+        assert not [text for text in real_findings if kit_group in text and "SKU" in text], (
+            f"{kit_group} sells on Shopify and direct only; that is not a gap"
+        )
+
+
+def test_a_kit_listed_nowhere_active_is_reported_as_suppressed(
+    real_findings: list[str],
+) -> None:
+    """25-010 is inactive on both channels: out of stock, so taken down."""
+    matches = [text for text in real_findings if "25-010" in text and "suppressed" in text]
+    assert matches, "25-010's inactive listings were not surfaced"
     assert all(text.startswith("WARNING") for text in matches), matches
 
 
@@ -178,7 +198,7 @@ def test_validate_config_command_passes_on_the_live_config(
     out = capsys.readouterr().out
     assert code == 0, out
     assert "No problems" in out
-    assert "2026-08-21" in out
+    assert "2026-08-24" in out
     assert "Traceback" not in out
 
 

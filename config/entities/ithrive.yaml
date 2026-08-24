@@ -45,6 +45,10 @@ suppliers_config: config/ithrive/suppliers.yaml
 boms_config: config/ithrive/boms.yaml
 shannon_config: config/ithrive/shannon.yaml
 policy_config: config/ithrive/policy.yaml
+# Amazon's own SKUs and each listing's status. Data only: Amazon identity
+# cannot be derived from an internal SKU, and a listing's status is what
+# tells "nobody wants this" from "he could not sell it".
+listings_config: config/ithrive/listings.yaml
 
 # Notification addresses live in shannon_config, mapped from role names.
 credentials_prefix: ITHRIVE_

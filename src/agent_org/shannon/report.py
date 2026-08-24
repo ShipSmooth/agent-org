@@ -32,6 +32,19 @@ def _n(value: Fraction | int) -> str:
     return f"{float(value):.2f}"
 
 
+def _heading(plan: ComponentPlan) -> str:
+    """The line that names a component.
+
+    Where the part number is ours rather than the supplier's, the product
+    name leads and the reference is labelled as ours — otherwise it reads
+    exactly like a SKU, and somebody quotes it to a supplier who has never
+    heard of it.
+    """
+    if plan.part_is_internal_reference:
+        return f"  {plan.supplier}  {plan.name}  (our reference {plan.key.part})"
+    return f"  {plan.key}  {plan.name}"
+
+
 def pack_overage_line(plan: ComponentPlan) -> str | None:
     """What a whole-pack purchase costs over what was needed, in words.
 
@@ -108,7 +121,15 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
             continue
         purchase = "not confirmed" if plan.purchase_units is None else str(plan.purchase_units)
         actual = "—" if plan.actual_units is None else str(plan.actual_units)
-        add(f"  {plan.key}  {plan.name}")
+        add(_heading(plan))
+        if plan.part_is_internal_reference:
+            # Orca publishes no item numbers, so the identifier is ours and
+            # means nothing to them. Ordering quotes the product name.
+            add(
+                f"      order by product name: “{plan.name}”. {plan.key.part} is our "
+                "own reference — this supplier has no part numbers, so never quote "
+                "it on a purchase order."
+            )
         add(
             f"      {_n(plan.raw_net)} → {plan.moq_rounded} → {plan.order_units} → "
             f"{purchase} → {actual}"
@@ -135,6 +156,10 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
             f"      have: on hand {plan.on_hand}, on order {plan.on_order}, "
             f"in transit {plan.in_transit}   →  route: {plan.routing}"
         )
+        if plan.sales_asins:
+            # Recognition only. Sales were read against the channel SKUs; an
+            # ASIN can be shared by three colourways and cannot say which sold.
+            add("      listed on Amazon under: " + ", ".join(plan.sales_asins))
         for note in plan.notes:
             add(f"      note: {note}")
         add("")
@@ -147,9 +172,7 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
     for plan in result.components:
         if plan.order_units > 0 or plan.component_class is ComponentClass.NON_STOCKED:
             continue
-        add(
-            f"  {plan.key}  {plan.name}: covered — on hand {plan.on_hand}, on order {plan.on_order}"
-        )
+        add(f"{_heading(plan)}: covered — on hand {plan.on_hand}, on order {plan.on_order}")
     add("")
 
     # Stated, never omitted: a missing line and a zero line read the same on
@@ -206,6 +229,38 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
             )
         add("")
 
+    # An inactive listing is not zero demand: Zach takes a listing down when he
+    # is out of stock, so its sales measure the listing rather than the market.
+    add("DEMAND SUPPRESSED — every Amazon listing is inactive, so the sales are not the demand")
+    add(THIN)
+    if not result.suppressed:
+        add("  None: every listed kit and component is live on at least one channel.")
+    for dead in result.suppressed:
+        add(f"  {dead.subject}  {dead.name} ({dead.kind})")
+        add("      inactive listings: " + ", ".join(dead.channels))
+        if dead.current_weekly > 0:
+            add(
+                f"      still selling {_n(dead.current_weekly)}/week away from Amazon. "
+                "Treat that as the floor, not the demand: nobody can buy it on "
+                "Amazon at all."
+            )
+        else:
+            add(
+                "      recent sales nil — which measures the listing, not the market, "
+                "so Shannon has not forecast it."
+            )
+        if dead.historical_weekly is not None:
+            add(
+                f"      historical, before it came down: {_n(dead.historical_weekly)}"
+                f"/week over {dead.historical_window_days} days."
+            )
+        else:
+            add(
+                "      no sales history reaches back before the listing came down, so "
+                "there is no honest figure to give you. Zero is not it."
+            )
+    add("")
+
     add("FBA INBOUND PLAN")
     add(THIN)
     if result.box_plan is None:
@@ -254,6 +309,12 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
         add(f"  {item.id}  {item.item}")
         if item.blocks:
             add(f"        blocks: {item.blocks}")
+    # Added by this run rather than by the config file: only Zach can decide
+    # whether a suppressed line is restocked and relisted, or discontinued.
+    for addition in result.parking_lot_additions:
+        add(f"  {addition.id}  {addition.item}")
+        add(f"        {addition.detail}")
+        add(f"        blocks: {addition.blocks}")
     add("")
     add(RULE)
     add(

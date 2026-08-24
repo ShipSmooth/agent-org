@@ -12,6 +12,7 @@ from enum import Enum
 from fractions import Fraction
 
 from agent_org.config.errors import Finding
+from agent_org.config.listings import EMPTY, ListingsConfig
 from agent_org.config.yamlsource import Loc
 
 
@@ -73,9 +74,13 @@ class Component:
     reorder_point: int | None
     reorder_target: int | None
     purchase_asin: str | None
-    # The listing Zach sells this component on. Only the sales side drives
-    # demand; the purchase side never does (docs/replenishment.md §5).
+    # The listing Zach sells this component on. Descriptive only: sales join
+    # on the channel SKU, which Zach controls (docs/replenishment.md §5).
     sales_asin: str | None
+    # True where the supplier genuinely publishes no item number — Orca sells
+    # by product name. The part is then ours, held for identity only, and is
+    # never quoted to the supplier as a SKU.
+    part_is_internal_reference: bool
     cover_target_weeks: Fraction | None
     safety_stock_weeks: Fraction | None
     loc: Loc
@@ -83,6 +88,11 @@ class Component:
     @property
     def supplier(self) -> str:
         return self.key.supplier
+
+    @property
+    def order_by(self) -> str:
+        """What goes on a purchase order: a real part number, or the name."""
+        return self.name if self.part_is_internal_reference else self.key.part
 
 
 def cover_target_for(
@@ -232,6 +242,7 @@ class EntityConfig:
     boms_config: str
     shannon_config: str
     policy_config: str
+    listings_config: str = ""
 
     def channel(self, name: str) -> Channel | None:
         for channel in self.channels:
@@ -266,6 +277,7 @@ class LoadedConfig:
     boms: BomConfig
     shannon: ShannonConfig
     policy: PolicyConfig
+    listings: ListingsConfig = EMPTY
     findings: tuple[Finding, ...] = ()
 
     @property

@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from fractions import Fraction
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 # Veeqo warehouse identifiers (iThrive — see the NAR reorder procedure).
 SPRINGFIELD_WAREHOUSE_ID = 70459
@@ -99,6 +99,19 @@ class InventoryReader(Protocol):
     def read_fba_inbound(self) -> dict[str, InboundShipment]: ...
 
 
+@runtime_checkable
+class HistoricalVelocityReader(Protocol):
+    """A longer window than the forecast one, for suppressed lines only.
+
+    When a listing has been down for months the trailing 90 days say zero,
+    which is true about the listing and false about the demand. A source
+    that can look further back offers this; one that cannot simply does
+    not, and Shannon says the history does not reach.
+    """
+
+    def read_velocity_history(self) -> dict[str, SalesVelocity]: ...
+
+
 class OrderSignalReader(Protocol):
     def read_order_signals(self) -> OrderSignals: ...
 
@@ -107,6 +120,7 @@ __all__ = [
     "AMAZON_US_FBA_WAREHOUSE_ID",
     "SPRINGFIELD_WAREHOUSE_ID",
     "AmbiguousOrderSignal",
+    "HistoricalVelocityReader",
     "InboundShipment",
     "InventoryReader",
     "OrderSignalReader",

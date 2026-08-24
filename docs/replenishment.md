@@ -190,9 +190,9 @@ Definitions and rules:
   aggregates the channels); Amazon Seller Central is a cross-check, never
   the primary.
 - Demand always originates on the **sales** side: a component's standalone
-  velocity is read via the product listing that carries its `sales_asin`
-  (or channel SKU). A `purchase_asin` is an acquisition path and never
-  creates demand (§5).
+  velocity is read on its channel SKUs, summed; its `sales_asin` describes
+  the listing and is never the join. A `purchase_asin` is an acquisition
+  path and never creates demand (§5).
 - Channels are data, not code: Amazon FBA, Amazon FBM, Shopify are
   populated; Walmart Seller Fulfilled and Walmart WFS exist in config with
   zero velocity until they have history. The sums above are over N
@@ -295,8 +295,55 @@ half the kit BOM lines are NAR.
   builds a staged purchase cart. Lives on the **component** record beside
   `supplier` and `supplier_part_number`.
 - `sales_asin` — a finished product listed on Amazon, sold FBA or FBM. An
-  **output**; read for velocity, which is what creates component demand.
-  Lives on the **product/listing** record.
+  **output**; describes the listing, and is **never the key velocity is
+  read on**. Lives on the **product/listing** record.
+
+**The channel SKU is the join key; the ASIN is description** (settled 24
+Aug 2026, `config/ithrive/listings.yaml`). Velocity comes from Veeqo, and
+Veeqo keys on Zach's own seller-SKU. Amazon's SKU for a product is
+Amazon's — `05-MN0Y-QNA3`, `EA-OASB-I658` — and no pattern derives it from
+`25-001` or `IFAK-CAT-BLACK`, so the mapping can only ever be data.
+
+The C-A-T Gen 7 is why this matters and not merely why it is tidy. It is
+listed under three ASINs, North American Rescue owns those listings, and
+no title states a colour, so an ASIN can never say black from orange from
+blue. Seven seller-SKUs can, and do.
+
+It follows that:
+
+- One component may have **several channel SKUs**; its velocity is the
+  **sum across all of them**. A scalar cannot hold that.
+- Several channel SKUs may **share one ASIN**. Joining on the ASIN would
+  merge three colourways into one line.
+- Once a component is mapped in `listings.yaml`, the mapping is the answer
+  **even when the answer is zero**. Shannon does not fall through to an
+  ASIN, because falling through is how the colourways get merged back.
+- The ASIN is still printed, so a human can recognise the listing.
+
+**A listing's status is data, and an inactive listing is not zero demand.**
+Zach takes a listing down when he is out of stock — he cannot sell what he
+has not got — and a trailing average cannot tell "nobody wants this" from
+"he could not sell it". Left alone that closes a loop: out of stock →
+delisted → no sales → no demand → no reorder → still out of stock, and the
+products most worth restocking are exactly the ones that get buried.
+
+So where **every** listing for a kit or component is inactive, Shannon
+reports it under **DEMAND SUPPRESSED**, never as an ordinary zero and
+never by leaving it out:
+
+- She does not forecast it. Suppressed is surfaced, not predicted.
+- Where a longer sales history reaches back to before the listing came
+  down, she reports that figure and **labels it historical**. Where it does
+  not, she says so. Zero is not a substitute.
+- Where the line still sells away from Amazon, that figure is reported as
+  a **floor**, not as the demand.
+- She adds it to the **parking lot automatically**: only Zach can decide
+  whether to restock and relist, or discontinue.
+
+A kit with **no listing at all** is a different thing and is not
+suppressed: `20-314`, `20-315` and `25-002` sell on Shopify and direct
+only, so zero on Amazon is structurally true and is never reported as a
+gap.
 
 All three cases are representable: a kit has a `sales_asin` and no
 `purchase_asin` (assembled, not bought); a marker has a `purchase_asin` and
@@ -571,9 +618,15 @@ comes from the 125-kit build. Walmart reserve 0 (no history).
 
 **Step 9 — FBA inbound plan:** the sending target is Step 8's answer,
 **28 units now**. Every box must be packed identically and the planner
-never overships, so B ∈ [5,10] with 28 units gives **B = 5 boxes, Q = 5
-per box** — 25 sent, 3 held back, the closest whole-box fit; ties break
-toward fewer boxes (§8). The
+never overships. Taken alone, 28 units give **B = 7 boxes, Q = 4 per
+box** — an exact fit, nothing held back; fewer boxes only wins a tie, and
+zero error has nothing to tie against. But B is one number for the whole
+shipment, and the Compact IFAK is sending 5 units in the same one: at B =
+7 the Compact line can only send 0 (7 × 1 = 7 overships its 5), for a
+total error of 5, while **B = 5** sends 5 × 5 = 25 of the full IFAK and 5
+× 1 = 5 Compact, total error 3. So the real plan is **5 boxes**, with 3
+full IFAK units held back — not because 28 cannot be hit, but because
+hitting it would strand the Compact line (§8). The
 `channels: [fba]` BOM lines (suffocation bags, labels) are consumed
 against the quantity actually being sent, not against total sales.
 

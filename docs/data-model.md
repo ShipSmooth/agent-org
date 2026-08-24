@@ -71,6 +71,12 @@ CREATE TABLE components (
     reorder_target INT,
     cover_target_weeks  NUMERIC(4,1),            -- NULL = entity default
     safety_stock_weeks  NUMERIC(4,1),
+    part_is_internal_reference BOOLEAN NOT NULL DEFAULT FALSE,
+                   -- TRUE where the supplier publishes no item numbers, so
+                   -- supplier_part_no above is OURS and means nothing to them
+                   -- (Orca Tactical). Ordering quotes `name`, which validation
+                   -- therefore requires to be non-empty. The single narrow
+                   -- exception to "never invent an identifier".
     UNIQUE (entity_id, supplier_id, supplier_part_no)
 );
 -- No inventory columns apply to non_stocked or ops_consumable components:
@@ -87,7 +93,14 @@ CREATE TABLE products (
     product_type   TEXT NOT NULL CHECK (product_type IN
                      ('nar_finished_kit', 'hmz_kit', 'nar_component_standalone')),
     sales_asin     TEXT,                          -- output side: listed on Amazon
-                                                  -- (FBA/FBM); read for velocity.
+                                                  -- (FBA/FBM). DESCRIPTION, not a
+                                                  -- key: velocity is read on the
+                                                  -- channel SKUs in
+                                                  -- config/<entity>/listings.yaml,
+                                                  -- summed, because three C-A-T
+                                                  -- colourways share one ASIN and
+                                                  -- NAR owns those listings
+                                                  -- (docs/replenishment.md §5).
                                                   -- A kit has sales_asin and no
                                                   -- purchase_asin; a NAR component
                                                   -- resold standalone has BOTH —

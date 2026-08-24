@@ -9,7 +9,7 @@
 #
 # Identity of every component is (supplier, part). Never a bare part number.
 
-bom_version: 2026-08-21
+bom_version: 2026-08-24
 
 # ---------------------------------------------------------------------------
 # SUPPLIERS — capability decides how a line can be acquired, never hardcoded
@@ -64,11 +64,14 @@ suppliers:
   orca_tactical:
     name: Orca Tactical Gear
     acquisition: purchase_order
-    lead_time_weeks: TODO           # ask Zach — see PL-1
+    lead_time_weeks: 2              # ~10 calendar days (Zach, 21 Aug 2026)
     notes: >
       Source for the Coyote and Multicam IFAK pouches, which World Richman's MOQ
-      made unviable. Until a lead time is known, assume it is long and treat both
-      colourways as build-blocked.
+      made unviable. ORCA PUBLISHES NO ITEM NUMBERS. The `part` values below are
+      INTERNAL references we minted, not supplier part numbers — ordering is by
+      product name. Do not present them to Orca as SKUs, and do not treat this as
+      a licence to invent identifiers anywhere a real one exists.
+      orcatacticalgear.com — collections/molle-pouches
 
   own_printed:
     name: Own printed inserts
@@ -126,6 +129,9 @@ components:
      class: forecast, units_per_purchase_unit: 1, moq_min: 400, moq_increment: 200}
   - {supplier: nar, part: "30-0001", name: "C-A-T Tourniquet Gen 7, Black",
      class: forecast, units_per_purchase_unit: 1, moq_min: 400, moq_increment: 200}
+  - {supplier: nar, part: "30-0033", name: "C-A-T Tourniquet Gen 7, Blue (TRAINING)",
+     class: forecast, units_per_purchase_unit: 1, moq_min: 400, moq_increment: 200,
+     note: "Resold standalone only — in NO kit, so it never appears in a BOM explosion. Added 24 Aug 2026 once the C-A-T channel-SKU mapping revealed a third colour."}
   - {supplier: nar, part: "10-0042", name: "HyFin Vent Compact Chest Seal, Twin Pack",
      class: forecast, units_per_purchase_unit: 1, moq_min: 750, moq_increment: 150,
      note: "One twin pack = 2 seals. Kit qty 1 means one twin pack (per answer B5)."}
@@ -271,12 +277,26 @@ components:
   - {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", name: "MOLLE pouch, Green",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: TODO, reorder_target: TODO, on_hand_note: "~4,750"}
-  - {supplier: orca_tactical, part: "TBD-ORCA-COYOTE", name: "MOLLE pouch, Coyote",
-     class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: TODO, reorder_target: TODO, on_hand_note: "ZERO — kit cannot be built"}
-  - {supplier: orca_tactical, part: "TBD-ORCA-MULTICAM", name: "MOLLE pouch, Multicam",
-     class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: TODO, reorder_target: TODO, on_hand_note: "ZERO — kit cannot be built"}
+  - supplier: orca_tactical
+    part: "ORCA-MOLLE-EMT-COYOTE"
+    part_is_internal_reference: true
+    name: "Orca Tactical MOLLE EMT Medical First Aid Pouch — Coyote"
+    class: reorder_point
+    units_per_purchase_unit: null
+    reorder_point: TODO
+    reorder_target: TODO
+    on_hand_note: "ZERO — kit cannot be built"
+    note: "Order by product name; Orca has no item numbers."
+  - supplier: orca_tactical
+    part: "ORCA-MOLLE-EMT-MULTICAM"
+    part_is_internal_reference: true
+    name: "Orca Tactical MOLLE EMT Medical First Aid Pouch — MULTI CAM"
+    class: reorder_point
+    units_per_purchase_unit: null
+    reorder_point: TODO
+    reorder_target: TODO
+    on_hand_note: "ZERO — kit cannot be built"
+    note: "Order by product name; Orca has no item numbers."
   - {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", name: "Slim MOLLE belt carrier",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 200, reorder_target: 500}
@@ -289,7 +309,10 @@ components:
   - {supplier: own_printed, part: "CARD-REDBAG", name: "Instruction card — 26-001 Red Bag kit (48HourPrint)",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 300, reorder_target: 1000}
-  - {supplier: own_printed, part: "CARD-BASIC", name: "Instruction card — Basic C-A-T and Basic SAM XT kits (printer unconfirmed)",
+  - {supplier: own_printed, part: "CARD-BASIC-CAT", name: "Instruction card — Basic C-A-T 25-010 (Next Day Flyers)",
+     class: reorder_point, units_per_purchase_unit: null,
+     reorder_point: 300, reorder_target: 1000}
+  - {supplier: own_printed, part: "CARD-BASIC-SAMXT", name: "Instruction card — Basic SAM XT 26-002 (Next Day Flyers)",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 300, reorder_target: 1000}
 
@@ -384,7 +407,7 @@ kits:
       - {supplier: nar, part: "30-0052", qty: 1}
       - {supplier: nar, part: "30-0179", qty: 1}          # 4in Mini, per B6
       - {supplier: amazon_business, part: "B0BG6ZSVGN", qty: 1}
-      - {supplier: own_printed, part: "CARD-BASIC", qty: 1}
+      - {supplier: own_printed, part: "CARD-BASIC-CAT", qty: 1}
       - {supplier: amazon_business, part: "B01I9L2MXO", qty: 1}
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
       - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
@@ -415,7 +438,7 @@ kits:
       - {supplier: nar, part: "30-0052", qty: 1}
       - {supplier: nar, part: "30-0179", qty: 1}          # 4in Mini, per B7
       - {supplier: amazon_business, part: "B0BG6ZSVGN", qty: 1}
-      - {supplier: own_printed, part: "CARD-BASIC", qty: 1}
+      - {supplier: own_printed, part: "CARD-BASIC-SAMXT", qty: 1}
       - {supplier: amazon_business, part: "B01I9L2MXO", qty: 1}
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
       - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
@@ -455,7 +478,7 @@ kits:
     family: IFAK-CAT
     aliases: {fba: TODO, fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
     components: *ifak_common
-    pouch: {supplier: orca_tactical, part: "TBD-ORCA-COYOTE", qty: 1}
+    pouch: {supplier: orca_tactical, part: "ORCA-MOLLE-EMT-COYOTE", qty: 1}
     build_blocked: "Pouch stock is zero — this colourway cannot be assembled."
 
   IFAK-CAT-MULTICAM:
@@ -463,7 +486,7 @@ kits:
     family: IFAK-CAT
     aliases: {fba: TODO, fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
     components: *ifak_common
-    pouch: {supplier: orca_tactical, part: "TBD-ORCA-MULTICAM", qty: 1}
+    pouch: {supplier: orca_tactical, part: "ORCA-MOLLE-EMT-MULTICAM", qty: 1}
     build_blocked: "Pouch stock is zero — this colourway cannot be assembled."
 
   IFAK-CAT-COMPACT:
@@ -508,24 +531,26 @@ parking_lot:
   - id: PL-1
     item: "Orca Tactical Gear — lead time, part numbers, and first order"
     detail: >
-      Coyote and Multicam IFAK pouches now come from Orca Tactical Gear rather than
-      World Richman, whose MOQ made them unviable. Still needed: Orca's lead time,
-      real part numbers for both colourways (TBD-ORCA-COYOTE / TBD-ORCA-MULTICAM),
-      and reorder points.
+      Coyote and Multicam IFAK pouches now come from Orca Tactical Gear (2-week
+      lead time) rather than World Richman, whose MOQ made them unviable. Orca
+      publishes no item numbers, so ordering is by product name. Still needed:
+      how many to order, and reorder points for both colourways.
     blocks: >
       IFAK-CAT-COYOTE and IFAK-CAT-MULTICAM cannot be built — pouch stock is zero.
       This is the most time-sensitive item on the list.
 
+  # PL-4 RESOLVED — kept below for the record
   - id: PL-4
-    item: "Confirm the Basic-kit instruction card"
+    item: "Instruction-card mapping (resolved)"
     detail: >
-      Two card versions are confirmed: CARD-ESSENTIAL-EXPRESS (Next Day Flyers) for
-      20-314, 20-315, 25-001 and 25-002; CARD-REDBAG (48HourPrint) for 26-001. The
-      Basic C-A-T (25-010) and Basic SAM XT (26-002) kits both list an instruction
-      insert, currently modelled as a third part `CARD-BASIC` with no printer named.
-      Zach to confirm whether that third version really exists, or whether those two
-      kits use one of the two known cards.
-    blocks: "Correct card demand on 25-010 and 26-002"
+      RESOLVED 21 Aug 2026. Four distinct cards, not three:
+      CARD-ESSENTIAL-EXPRESS (Next Day Flyers) — 20-314, 20-315, 25-001, 25-002;
+      CARD-REDBAG (48HourPrint) — 26-001;
+      CARD-BASIC-CAT (Next Day Flyers) — 25-010;
+      CARD-BASIC-SAMXT (Next Day Flyers) — 26-002.
+      Three of the four come from Next Day Flyers, one from 48HourPrint; both
+      quote ~10 business days.
+    blocks: "Nothing — retained for the record"
 
   - id: PL-8
     item: "Pull FBA alias SKUs and sales ASINs from Seller Central"

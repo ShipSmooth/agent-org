@@ -26,7 +26,7 @@ from agent_org.config.models import (
     LoadedConfig,
     cover_target_for,
 )
-from agent_org.config.yamlsource import Loc
+from agent_org.config.yamlsource import UNKNOWN_LOC, Loc
 
 ASIN_PATTERN = re.compile(r"^[A-Z0-9]{10}$")
 
@@ -69,6 +69,7 @@ def validate(config: LoadedConfig, extra: Sequence[Finding] | None = None) -> Va
 
     findings += _check_suppliers(config)
     findings += _check_components(config)
+    findings += _check_listings(config, channel_keys)
     findings += _check_kits(config, channel_keys)
     findings += _check_fba_prep(config)
     findings += _check_recipients(config)
@@ -140,6 +141,16 @@ def _check_components(config: LoadedConfig) -> list[Finding]:
             findings += _check_reorder_thresholds(component.key, component)
         if component.component_class in PURCHASABLE_CLASSES:
             findings += _check_lead_time(config, key)
+        if component.part_is_internal_reference and not component.name.strip():
+            findings.append(
+                error(
+                    f"Component {key} is marked 'part_is_internal_reference' but has no "
+                    "name. The part number is ours, not the supplier's, so the name is "
+                    "the only thing that can be put on a purchase order.",
+                    component.loc,
+                    fix="Add 'name:' with the product name exactly as the supplier sells it.",
+                )
+            )
         if component.units_per_purchase_unit is not None and component.units_per_purchase_unit < 1:
             findings.append(
                 error(
@@ -149,6 +160,70 @@ def _check_components(config: LoadedConfig) -> list[Finding]:
                     fix="Use 1 for singles, or the real pack size.",
                 )
             )
+    return findings
+
+
+def _check_listings(config: LoadedConfig, channel_keys: set[str]) -> list[Finding]:
+    """Amazon identity is data, so the only checks are that it lines up.
+
+    A kit or component with no listing at all is not a finding: three kits
+    have never been on Amazon and their Amazon velocity is structurally
+    zero, which is a fact rather than a gap.
+    """
+    findings: list[Finding] = []
+    listings = config.listings
+    boms = config.boms
+    claimed: dict[str, str] = {}
+    parts = {key.part for key in boms.components}
+    unknown: list[str] = []
+    subjects = list(listings.kits.items()) + list(listings.components.items())
+    for subject, listing_set in subjects:
+        if subject not in boms.kits and subject not in parts:
+            # Said once, at the end: Zach lists far more than he assembles, and
+            # forty near-identical warnings would bury the ones that matter.
+            unknown.append(subject)
+        for listing in listing_set.listings:
+            if listing.channel and listing.channel not in channel_keys:
+                findings.append(
+                    error(
+                        f"'{subject}' has a listing on a channel called "
+                        f"'{listing.channel}', which is not a channel this business "
+                        "sells on.",
+                        listing.loc,
+                        fix="Use one of: " + ", ".join(sorted(channel_keys)) + ".",
+                    )
+                )
+            if listing.sku in claimed and claimed[listing.sku] != subject:
+                findings.append(
+                    error(
+                        f"Channel SKU '{listing.sku}' is claimed by both "
+                        f"'{claimed[listing.sku]}' and '{subject}'. Sales of it would be "
+                        "counted twice.",
+                        listing.loc,
+                    )
+                )
+            claimed[listing.sku] = subject
+        if listing_set.demand_is_suppressed:
+            findings.append(
+                warning(
+                    f"Every listing for '{subject}' is inactive, so its recent sales "
+                    "understate demand rather than measure it. Shannon reports it as "
+                    "suppressed and puts it in the parking lot for you.",
+                    listing_set.loc,
+                    fix="Restock and relist, or decide to discontinue it.",
+                )
+            )
+    if unknown:
+        findings.append(
+            warning(
+                f"{len(unknown)} listing(s) are for things the BOM does not describe, so "
+                "Shannon can read their sales but can never reorder them: "
+                + ", ".join(sorted(unknown))
+                + ".",
+                UNKNOWN_LOC if not subjects else subjects[0][1].loc,
+                fix="Add them to the BOM as components, or leave them if they are retired.",
+            )
+        )
     return findings
 
 
@@ -229,6 +304,12 @@ def _check_kits(config: LoadedConfig, channel_keys: set[str]) -> list[Finding]:
                     )
                 )
             if sku is None:
+                listing_set = config.listings.for_kit(kit_group)
+                if listing_set is not None:
+                    # listings.yaml is the authority on Amazon identity: either it
+                    # gives the channel SKU, or it says there is no listing on that
+                    # channel, which is a fact rather than a gap (PL-8).
+                    continue
                 findings.append(
                     warning(
                         f"Kit '{kit_group}' has no SKU for the '{channel_key}' channel — "

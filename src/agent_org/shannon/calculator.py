@@ -32,6 +32,7 @@ from agent_org.config.models import (
     Kit,
     LoadedConfig,
     Parameters,
+    cover_target_for,
 )
 from agent_org.integrations.reads import InboundShipment, SalesVelocity, StockPosition
 from agent_org.shannon.boxes import BoxPlan, plan_boxes
@@ -88,6 +89,58 @@ class KitBuild:
     limiting_component: ComponentKey | None
     limiting_note: str | None
     build_blocked: str | None
+    # The family's build recommendation, divided by this colourway's own
+    # demand and its own assembled stock. The shares always sum to the
+    # family total: one number to build, and where it lands.
+    demand_units: int = 0
+    assembled_stock: int = 0
+    build_share: int = 0
+
+
+def _split_build(builds: list[KitBuild], family_build: int) -> list[KitBuild]:
+    """Divide one family build recommendation across its colourways.
+
+    Each colourway's own shortfall (its demand less its own stock) comes
+    first; whatever the family total leaves over is handed out in demand
+    order. The shares always add up to the family figure, so the report can
+    show the split without the two views disagreeing.
+    """
+    if not builds:
+        return builds
+    shortfalls = [max(item.demand_units - item.assembled_stock, 0) for item in builds]
+    total = sum(shortfalls)
+    if total == 0:
+        shares = [0] * len(builds)
+        shares[0] = family_build
+    elif total <= family_build:
+        shares = list(shortfalls)
+        # Spread the remainder over the colourways that sell fastest.
+        order = sorted(range(len(builds)), key=lambda i: -builds[i].demand_units)
+        left = family_build - total
+        for position, index in enumerate(order):
+            shares[index] += left // len(builds) + (1 if position < left % len(builds) else 0)
+    else:
+        shares = [shortfall * family_build // total for shortfall in shortfalls]
+        order = sorted(
+            range(len(builds)),
+            key=lambda i: -((shortfalls[i] * family_build) % total),
+        )
+        for index in order[: family_build - sum(shares)]:
+            shares[index] += 1
+    return [
+        KitBuild(
+            kit_group=item.kit_group,
+            name=item.name,
+            buildable_now=item.buildable_now,
+            limiting_component=item.limiting_component,
+            limiting_note=item.limiting_note,
+            build_blocked=item.build_blocked,
+            demand_units=item.demand_units,
+            assembled_stock=item.assembled_stock,
+            build_share=share,
+        )
+        for item, share in zip(builds, shares, strict=True)
+    ]
 
 
 @dataclass(frozen=True)
@@ -229,9 +282,12 @@ class ReplenishmentCalculator:
         return shipment.units if shipment else 0
 
     def _cover(self, component: Component | None) -> Fraction:
-        if component is not None and component.cover_target_weeks is not None:
-            return component.cover_target_weeks
-        return self.params.cover_target_weeks
+        supplier = (
+            self.config.boms.suppliers.get(component.key.supplier)
+            if component is not None
+            else None
+        )
+        return cover_target_for(component, supplier, self.params.cover_target_weeks)
 
     def _allocate(self, sku: str, weekly_by_channel: dict[str, Fraction]) -> Allocation:
         position = self._stock_of(sku)
@@ -322,11 +378,14 @@ class ReplenishmentCalculator:
                 per_kit = self._kit_channel_velocity(kit)
                 for channel, value in per_kit.items():
                     weekly_by_channel[channel] = weekly_by_channel.get(channel, Fraction(0)) + value
-                kit_demand[kit.kit_group] = sum(per_kit.values(), Fraction(0)) * horizon
+                member_demand = sum(per_kit.values(), Fraction(0)) * horizon
+                kit_demand[kit.kit_group] = member_demand
+                member_stock = 0
                 for channel, sku in self._kit_skus(kit):
                     position = self._stock_of(sku)
                     warehouse += position.warehouse_available
                     fba_on_hand += position.fba_sellable
+                    member_stock += position.warehouse_available + position.fba_sellable
                     if channel in self._fba_channels:
                         has_fba_alias = True
                         inbound += self._inbound_of(sku)
@@ -344,6 +403,8 @@ class ReplenishmentCalculator:
                         limiting_component=limiting,
                         limiting_note=limiting_note,
                         build_blocked=kit.build_blocked,
+                        demand_units=ceil_fraction(member_demand),
+                        assembled_stock=member_stock,
                     )
                 )
 
@@ -352,6 +413,7 @@ class ReplenishmentCalculator:
             assembled = warehouse + fba_on_hand
             build = max(demand_units - assembled, 0)
             buildable_total = sum(item.buildable_now for item in builds)
+            builds = _split_build(builds, build)
             name = self._family_name(family, members)
 
             allocation: Allocation | None = None

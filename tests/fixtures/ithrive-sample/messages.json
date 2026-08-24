@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "Sample Gmail order signals for the live parts list. An order counts as",
+    "outstanding when a confirmation exists with no matching shipping",
+    "notification, matched on the base EC number. Invented order numbers."
+  ],
+  "messages": [
+    {
+      "subject": "Order Confirmation EC2799001",
+      "body": "Thank you for your order.",
+      "lines": [{"sku": "30-0001", "qty": 400}, {"sku": "10-0042", "qty": 150}]
+    },
+    {
+      "subject": "Order Confirmation EC2799002",
+      "body": "Thank you for your order.",
+      "lines": [{"sku": "30-0023", "qty": 400}]
+    },
+    {
+      "subject": "Shipping Notification EC2799002",
+      "body": "Your order has shipped."
+    }
+  ]
+}

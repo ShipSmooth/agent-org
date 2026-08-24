@@ -9,7 +9,7 @@
 #
 # Identity of every component is (supplier, part). Never a bare part number.
 
-bom_version: 2026-08-20
+bom_version: 2026-08-21
 
 # ---------------------------------------------------------------------------
 # SUPPLIERS — capability decides how a line can be acquired, never hardcoded
@@ -28,7 +28,7 @@ suppliers:
   dynarex:
     name: Dynarex Corporation
     acquisition: browser            # dynarex.com, account login
-    lead_time_weeks: TODO           # ask Zach
+    lead_time_weeks: 1              # ~5 business days (Zach, 21 Aug 2026)
     credentials_env_prefix: DYNAREX_
     notes: >
       Zach has a dynarex.com account. Credentials come from environment variables —
@@ -43,16 +43,41 @@ suppliers:
   world_richman:
     name: World Richman Corporation
     acquisition: purchase_order     # rep: Scott Mareci
-    lead_time_weeks: TODO           # ask Zach
+    lead_time_weeks: 9              # ~60 calendar days (Zach, 21 Aug 2026)
+    cover_target_weeks: 13          # REQUIRED OVERRIDE. The global cover target is 7
+                                    # and is INCLUSIVE of lead time, so a 9-week lead
+                                    # time makes cover_target < lead_time — which the
+                                    # spec says must fail at config load. 13 = 9 lead
+                                    # + 4 buffer, matching the shape of the NAR rule.
+                                    # Longest lead time in the system by 3x; a
+                                    # soft-goods stockout cannot be fixed quickly.
     part_number_format: "<kit_sku>-bag"
     notes: >
       All soft goods — carrying cases, nylon bags, MOLLE pouches, belt carriers.
       MOQ is high; see parking_lot for the Multicam/Coyote pouch sourcing gap.
 
+  sam_medical:
+    name: SAM Medical — bought DIRECT, not through NAR (Zach, 21 Aug 2026)
+    acquisition: purchase_order
+    lead_time_weeks: 2              # ~14 calendar days (Zach, 21 Aug 2026)
+
+  orca_tactical:
+    name: Orca Tactical Gear
+    acquisition: purchase_order
+    lead_time_weeks: TODO           # ask Zach — see PL-1
+    notes: >
+      Source for the Coyote and Multicam IFAK pouches, which World Richman's MOQ
+      made unviable. Until a lead time is known, assume it is long and treat both
+      colourways as build-blocked.
+
   own_printed:
     name: Own printed inserts
     acquisition: purchase_order
-    lead_time_weeks: TODO
+    lead_time_weeks: 2              # ~10 business days, both printers
+    notes: >
+      Two printers, two card versions confirmed: Next Day Flyers prints the
+      Essential and Express card; 48HourPrint prints the 26-001 Red Bag card.
+      A third version exists but is not yet mapped to a kit — see PL-4.
 
   internal:
     name: Held loose, no current reorder path
@@ -124,9 +149,9 @@ components:
       purchase side and no sales side.
 
   # ---- SAM ----------------------------------------------------------------
-  - {supplier: TODO, part: "XT600-OR-EN", name: "SAM XT Tourniquet, Metal Windlass, Orange",
+  - {supplier: sam_medical, part: "XT600-OR-EN", name: "SAM XT Tourniquet, Metal Windlass, Orange",
      class: forecast, units_per_purchase_unit: 1,
-     note: "CONFIRM: bought direct from SAM Medical, or through NAR?"}
+     note: "Lead time ~14 calendar days (Zach). CONFIRM who the seller is — see PL-3."}
 
   # ---- Dynarex (dynarex.com account) ---------------------------------------
   - {supplier: dynarex, part: "3161", name: "Krinkle Gauze Roll, Sterile 4.5in x 4.1yd 6-ply",
@@ -173,9 +198,10 @@ components:
     reorder_point: TODO
     reorder_target: TODO
     note: >
-      CONFIRM QTY. Zach wrote "one per roll of gloves in HMZ kits". Drafted as
-      qty 1 in every HMZ kit, consumed on every channel. Verify that is right —
-      it may be one per glove roll purchased rather than one per kit assembled.
+      RESOLVED 21 Aug 2026 (Zach): a glove-roll holds two gloves, i.e. one pair.
+      So the bag quantity in a kit equals the number of glove PAIRS in that kit —
+      2 in every kit that takes 2 pairs, 1 in the Compact IFAK. Consumed on every
+      channel.
 
   # ---- Amazon Business: FBA prep, channel-conditional -----------------------
   # These are consumed at PREP time for units routed to FBA. They are not consumed
@@ -218,16 +244,19 @@ components:
       when stock is low and never picks a supplier. ~20,000 on hand.
 
   # ---- Internal: real stock, no reorder path yet ----------------------------
-  - supplier: internal
-    part: "HMZ-0001"
+  - supplier: dynarex
+    part: "3681"
     name: "Triangular Bandage 40x40x56in"
     class: reorder_point
-    units_per_purchase_unit: 1
+    units_per_purchase_unit: 240
+    purchase_unit_name: "case of 240"
     reorder_point: 200
     reorder_target: 2000
     note: >
-      Unbranded, ~2,000 held loose. NOT NAR 30-0089. Internal part number assigned
-      20 Aug 2026. Needs a supplier before it can ever be reordered — see parking_lot.
+      SOURCED 21 Aug 2026 (Zach): Dynarex 3681, 240 units per case. Was previously
+      internal/unsourced with ~2,000 held loose. NOT NAR 30-0089. Second-largest
+      pack size in the system after nothing — a need of 300 is 2 cases (480 units),
+      so the pack-rounding overage is large and must be visible on the report.
 
   # ---- World Richman soft goods --------------------------------------------
   - {supplier: world_richman, part: "25-001-bag", name: "Express kit red carrying case",
@@ -242,10 +271,10 @@ components:
   - {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", name: "MOLLE pouch, Green",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: TODO, reorder_target: TODO, on_hand_note: "~4,750"}
-  - {supplier: world_richman, part: "IFAK-CAT-COYOTE-bag", name: "MOLLE pouch, Coyote",
+  - {supplier: orca_tactical, part: "TBD-ORCA-COYOTE", name: "MOLLE pouch, Coyote",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: TODO, reorder_target: TODO, on_hand_note: "ZERO — kit cannot be built"}
-  - {supplier: world_richman, part: "IFAK-CAT-MULTICAM-bag", name: "MOLLE pouch, Multicam",
+  - {supplier: orca_tactical, part: "TBD-ORCA-MULTICAM", name: "MOLLE pouch, Multicam",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: TODO, reorder_target: TODO, on_hand_note: "ZERO — kit cannot be built"}
   - {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", name: "Slim MOLLE belt carrier",
@@ -254,13 +283,13 @@ components:
 
   # ---- Own printed inserts --------------------------------------------------
   # Three distinct versions exist. Which kit uses which is not yet mapped.
-  - {supplier: own_printed, part: "CARD-1", name: "Instruction card, version 1",
+  - {supplier: own_printed, part: "CARD-ESSENTIAL-EXPRESS", name: "Instruction card — Essential and Express kits (Next Day Flyers)",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 300, reorder_target: 1000}
-  - {supplier: own_printed, part: "CARD-2", name: "Instruction card, version 2",
+  - {supplier: own_printed, part: "CARD-REDBAG", name: "Instruction card — 26-001 Red Bag kit (48HourPrint)",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 300, reorder_target: 1000}
-  - {supplier: own_printed, part: "CARD-3", name: "Instruction card, version 3",
+  - {supplier: own_printed, part: "CARD-BASIC", name: "Instruction card — Basic C-A-T and Basic SAM XT kits (printer unconfirmed)",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 300, reorder_target: 1000}
 
@@ -291,8 +320,8 @@ kits:
       - {supplier: dynarex, part: "3161", qty: 1}
       - {supplier: dynarex, part: "3683", qty: 1}
       - {supplier: amazon_business, part: "B0BG6ZSVGN", qty: 1}
-      - {supplier: own_printed, part: CARD-TODO, qty: 1}
-      - {supplier: amazon_business, part: "B096LMW9YX", qty: 1}   # CONFIRM
+      - {supplier: own_printed, part: "CARD-ESSENTIAL-EXPRESS", qty: 1}
+      - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
       - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
 
   "20-315":
@@ -306,15 +335,15 @@ kits:
       - {supplier: dynarex, part: "3161", qty: 1}
       - {supplier: dynarex, part: "3683", qty: 1}
       - {supplier: amazon_business, part: "B0BG6ZSVGN", qty: 1}
-      - {supplier: own_printed, part: CARD-TODO, qty: 1}
-      - {supplier: amazon_business, part: "B096LMW9YX", qty: 1}   # CONFIRM
+      - {supplier: own_printed, part: "CARD-ESSENTIAL-EXPRESS", qty: 1}
+      - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
       - {supplier: internal, part: WALL-MOUNT, qty: 1}            # non_stocked
       - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
 
   "25-001":
     name: Express Bleeding Control Kit
     aliases: {fba: TODO, fbm: "25-001", shopify: "25-001"}
-    note: "Per answer A2, a wall-mounted variant of this kit also exists — SKU TODO."
+    note: "Wall-mounted sibling is 25-002."
     components:
       - {supplier: nar, part: "30-0023", qty: 1}
       - {supplier: amazon_business, part: "B0FC56RYZ3", qty: 2}
@@ -322,10 +351,27 @@ kits:
       - {supplier: dynarex, part: "3161", qty: 1}
       - {supplier: dynarex, part: "3683", qty: 1}
       - {supplier: amazon_business, part: "B0BG6ZSVGN", qty: 1}
-      - {supplier: own_printed, part: CARD-TODO, qty: 1}
+      - {supplier: own_printed, part: "CARD-ESSENTIAL-EXPRESS", qty: 1}
       - {supplier: world_richman, part: "25-001-bag", qty: 1}
       - {supplier: amazon_business, part: "B08LKC2DFY", qty: 1}   # zip tie, Express only
-      - {supplier: amazon_business, part: "B096LMW9YX", qty: 1}   # CONFIRM
+      - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+
+  "25-002":
+    name: Express Bleeding Control Kit — Wall Mounted
+    aliases: {fba: TODO, fbm: "25-002", shopify: "25-002"}
+    components:
+      - {supplier: nar, part: "30-0023", qty: 1}
+      - {supplier: amazon_business, part: "B0FC56RYZ3", qty: 2}
+      - {supplier: amazon_business, part: "B0BR7XPNXW", qty: 1}
+      - {supplier: dynarex, part: "3161", qty: 1}
+      - {supplier: dynarex, part: "3683", qty: 1}
+      - {supplier: amazon_business, part: "B0BG6ZSVGN", qty: 1}
+      - {supplier: own_printed, part: "CARD-ESSENTIAL-EXPRESS", qty: 1}
+      - {supplier: world_richman, part: "25-001-bag", qty: 1}
+      - {supplier: internal, part: WALL-MOUNT, qty: 1}            # non_stocked
+      - {supplier: amazon_business, part: "B08LKC2DFY", qty: 1}   # zip tie, Express only
+      - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
       - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
 
   "25-010":
@@ -338,9 +384,9 @@ kits:
       - {supplier: nar, part: "30-0052", qty: 1}
       - {supplier: nar, part: "30-0179", qty: 1}          # 4in Mini, per B6
       - {supplier: amazon_business, part: "B0BG6ZSVGN", qty: 1}
-      - {supplier: own_printed, part: CARD-TODO, qty: 1}
+      - {supplier: own_printed, part: "CARD-BASIC", qty: 1}
       - {supplier: amazon_business, part: "B01I9L2MXO", qty: 1}
-      - {supplier: amazon_business, part: "B096LMW9YX", qty: 1}   # CONFIRM
+      - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
       - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
 
   "26-001":
@@ -354,28 +400,29 @@ kits:
       - {supplier: amazon_business, part: "B0FC56RYZ3", qty: 2}   # 2 pairs, per B13
       - {supplier: amazon_business, part: "B0BR7XPNXW", qty: 1}
       - {supplier: amazon_business, part: "B0BG6ZSVGN", qty: 1}
-      - {supplier: own_printed, part: CARD-TODO, qty: 1}
+      - {supplier: own_printed, part: "CARD-REDBAG", qty: 1}
       - {supplier: world_richman, part: "26-001-bag", qty: 1}
-      - {supplier: amazon_business, part: "B096LMW9YX", qty: 1}   # CONFIRM
+      - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
       - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
 
   "26-002":
     name: Basic Bleeding Control Kit — SAM XT
     aliases: {fba: TODO, fbm: "26-002", shopify: "26-002"}
     components:
-      - {supplier: TODO, part: "XT600-OR-EN", qty: 1}     # orange metal, per B4
+      - {supplier: sam_medical, part: "XT600-OR-EN", qty: 1}     # orange metal, per B4
       - {supplier: amazon_business, part: "B0FC56RYZ3", qty: 2}
       - {supplier: amazon_business, part: "B0BR7XPNXW", qty: 1}
       - {supplier: nar, part: "30-0052", qty: 1}
       - {supplier: nar, part: "30-0179", qty: 1}          # 4in Mini, per B7
       - {supplier: amazon_business, part: "B0BG6ZSVGN", qty: 1}
-      - {supplier: own_printed, part: CARD-TODO, qty: 1}
+      - {supplier: own_printed, part: "CARD-BASIC", qty: 1}
       - {supplier: amazon_business, part: "B01I9L2MXO", qty: 1}
-      - {supplier: amazon_business, part: "B096LMW9YX", qty: 1}   # CONFIRM
+      - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
       - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
 
   # The four colourways are one product family: they are forecast together,
   # built together and shipped to FBA in one shipment (docs/replenishment.md §10).
+  # Per-colourway build feasibility is still reported separately.
   IFAK-CAT-BLACK:
     name: IFAK with CAT Gen 7 & HyFin — Black
     family: IFAK-CAT
@@ -387,7 +434,7 @@ kits:
       - {supplier: nar, part: "30-0179", qty: 1}
       - {supplier: nar, part: "30-0052", qty: 2}
       - {supplier: dynarex, part: "3173", qty: 1}
-      - {supplier: internal, part: "HMZ-0001", qty: 1}    # triangular bandage
+      - {supplier: dynarex, part: "3681", qty: 1}    # triangular bandage
       - {supplier: dynarex, part: "3553", qty: 1}         # paper tape, per C3
       - {supplier: nar, part: "ZZ-0034", qty: 1}          # 1 airway; pack of 2
       - {supplier: unsourced, part: GLOVE-BLK-L, qty: 2}
@@ -408,7 +455,7 @@ kits:
     family: IFAK-CAT
     aliases: {fba: TODO, fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
     components: *ifak_common
-    pouch: {supplier: world_richman, part: "IFAK-CAT-COYOTE-bag", qty: 1}
+    pouch: {supplier: orca_tactical, part: "TBD-ORCA-COYOTE", qty: 1}
     build_blocked: "Pouch stock is zero — this colourway cannot be assembled."
 
   IFAK-CAT-MULTICAM:
@@ -416,7 +463,7 @@ kits:
     family: IFAK-CAT
     aliases: {fba: TODO, fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
     components: *ifak_common
-    pouch: {supplier: world_richman, part: "IFAK-CAT-MULTICAM-bag", qty: 1}
+    pouch: {supplier: orca_tactical, part: "TBD-ORCA-MULTICAM", qty: 1}
     build_blocked: "Pouch stock is zero — this colourway cannot be assembled."
 
   IFAK-CAT-COMPACT:
@@ -429,6 +476,7 @@ kits:
       - {supplier: nar, part: "10-0042", qty: 1}
       - {supplier: nar, part: "30-0179", qty: 1}
       - {supplier: unsourced, part: GLOVE-BLK-L, qty: 1}  # 1 pair
+      - {supplier: amazon_business, part: "B096LMW9YX", qty: 1}   # 1 per glove pair
       - {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", qty: 1}
       - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
 
@@ -452,29 +500,37 @@ standalone_fba_prep:
 # PARKING LOT — carried forward in every report until Zach clears each item
 # ---------------------------------------------------------------------------
 parking_lot:
+  # RESOLVED 21 Aug 2026 and removed from this list: triangular bandage supplier
+  # (Dynarex 3681, 240/case) · SAM XT bought direct from SAM Medical · glove-roll
+  # bag is one per glove PAIR · Express wall-mounted SKU is 25-002 · Dynarex,
+  # World Richman, SAM Medical and printer lead times.
+
   - id: PL-1
-    item: "Source Multicam and Coyote MOLLE pouches"
+    item: "Orca Tactical Gear — lead time, part numbers, and first order"
     detail: >
-      World Richman's MOQ is too large for these two colourways and stock is zero,
-      so neither kit can be assembled. Zach needs an alternative supplier.
-    blocks: "IFAK-CAT-COYOTE and IFAK-CAT-MULTICAM cannot be built"
-  - id: PL-2
-    item: "Find a supplier for the triangular bandage (HMZ-0001)"
-    detail: "~2,000 held loose, unbranded, no reorder path. Not NAR 30-0089."
-    blocks: "Cannot reorder when stock runs out"
-  - id: PL-3
-    item: "Confirm whether SAM XT is bought from SAM Medical or through NAR"
-    blocks: "Supplier routing for 26-002"
+      Coyote and Multicam IFAK pouches now come from Orca Tactical Gear rather than
+      World Richman, whose MOQ made them unviable. Still needed: Orca's lead time,
+      real part numbers for both colourways (TBD-ORCA-COYOTE / TBD-ORCA-MULTICAM),
+      and reorder points.
+    blocks: >
+      IFAK-CAT-COYOTE and IFAK-CAT-MULTICAM cannot be built — pouch stock is zero.
+      This is the most time-sensitive item on the list.
+
   - id: PL-4
-    item: "Map the three instruction-card versions to kits"
-    blocks: "CARD-TODO placeholders in six kits"
-  - id: PL-5
-    item: "Confirm the glove-roll bag quantity (B096LMW9YX)"
-    detail: "Drafted as one per kit. May be one per glove roll purchased instead."
-  - id: PL-6
-    item: "Assign a SKU to the Express wall-mounted variant"
-  - id: PL-7
-    item: "Provide Dynarex and World Richman lead times"
+    item: "Confirm the Basic-kit instruction card"
+    detail: >
+      Two card versions are confirmed: CARD-ESSENTIAL-EXPRESS (Next Day Flyers) for
+      20-314, 20-315, 25-001 and 25-002; CARD-REDBAG (48HourPrint) for 26-001. The
+      Basic C-A-T (25-010) and Basic SAM XT (26-002) kits both list an instruction
+      insert, currently modelled as a third part `CARD-BASIC` with no printer named.
+      Zach to confirm whether that third version really exists, or whether those two
+      kits use one of the two known cards.
+    blocks: "Correct card demand on 25-010 and 26-002"
+
   - id: PL-8
     item: "Pull FBA alias SKUs and sales ASINs from Seller Central"
-    detail: "All `aliases.fba` and `sales_asin` values are TODO until that export lands."
+    detail: >
+      Every `aliases.fba` is TODO and no `sales_asin` is populated. Shannon needs
+      the sales ASIN to read standalone velocity; the FBA alias joins each kit's
+      FBA simple product to its recipe.
+    blocks: "The first live run against real Veeqo and Amazon data"

@@ -41,6 +41,36 @@ def test_the_same_week_is_never_queued_twice(
         assert first.id == second.id
 
 
+def test_a_run_for_one_week_never_claims_another_weeks_task(
+    app_conn: psycopg.Connection[tuple[object, ...]], entity_id: str
+) -> None:
+    """Found by running it: a manual run picked up the scheduler's queued
+    weekly task and wrote that week's report under this week's numbers."""
+    with entity_session(app_conn, entity_id) as conn:
+        queue = TaskQueue(conn, entity_id, AuditLog(conn=conn, entity_id=entity_id, actor="test"))
+        scheduled = schedule_slot("shannon_replenishment", datetime(2026, 4, 6, tzinfo=UTC))
+        manual = schedule_slot("shannon_replenishment", datetime(2026, 4, 13, tzinfo=UTC))
+        queued_by_scheduler = queue.enqueue("shannon_replenishment", scheduled)
+        queued_by_hand = queue.enqueue("shannon_replenishment", manual)
+
+        claimed = queue.claim(("shannon_replenishment",), schedule_slot=manual)
+        assert claimed is not None
+        assert claimed.id == queued_by_hand.id
+        assert claimed.schedule_slot == manual
+
+        # The older task is untouched and still waiting for its own run.
+        still_queued = queue.get(queued_by_scheduler.id)
+        assert still_queued is not None
+        assert still_queued.state is TaskState.QUEUED
+
+        # Naming a slot with nothing queued for it claims nothing at all,
+        # rather than falling back to whatever is oldest.
+        empty = schedule_slot("shannon_replenishment", datetime(2026, 4, 20, tzinfo=UTC))
+        assert queue.claim(("shannon_replenishment",), schedule_slot=empty) is None
+
+        queue.succeed(claimed, {"report": "manual.md"})
+
+
 def test_intent_is_written_before_the_state_it_describes(
     app_conn: psycopg.Connection[tuple[object, ...]], entity_id: str
 ) -> None:

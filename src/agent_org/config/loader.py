@@ -197,12 +197,16 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
         lead_time = _fraction_or_none(entry.get("lead_time_weeks"))
         if lead_time is None and caps_block is not None:
             lead_time = _fraction_or_none(caps_block.get("lead_time_weeks"))
+        cover = _fraction_or_none(entry.get("cover_target_weeks"))
+        if cover is None and caps_block is not None:
+            cover = _fraction_or_none(caps_block.get("cover_target_weeks"))
         suppliers[key] = Supplier(
             key=key,
             name=str(entry.get("name", key)),
             acquisition=str(entry.get("acquisition", "none")),
             capabilities=frozenset(capabilities),
             lead_time_weeks=lead_time,
+            cover_target_weeks=cover,
             loc=supplier_block.loc_of(key),
         )
 
@@ -513,7 +517,9 @@ def load_policy(global_path: Path, entity_path: Path | None) -> PolicyConfig:
         for item in entity_raw.get("rules", []):
             entry = _require_map(item, "A policy rule", loc_of(item))
             action = str(entry.get("action"))
-            tier = _int_or_none(entry.get("tier")) or default_tier
+            tier = _int_or_none(entry.get("tier"))
+            if tier is None:
+                raise ConfigError([error(f"Entity policy rule '{action}' has no tier.", entry.loc)])
             existing = rules.get(action)
             if existing is not None and tier < existing.tier:
                 raise ConfigError(

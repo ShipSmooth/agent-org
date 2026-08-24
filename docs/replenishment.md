@@ -277,8 +277,10 @@ that matter:
   are pending today** (the Latex Tourniquet Band was removed from every
   kit and is no longer a component).
 - `internal` — real stock on hand, no supplier attached yet. Reports and
-  prompts, never carts, never fails the run. Example: the triangular
-  bandage `HMZ-0001` — unbranded, ~2,000 held loose (not NAR 30-0089).
+  prompts, never carts, never fails the run. Today the only internal line
+  is the wall mount, which is `non_stocked` as well. (The triangular
+  bandage was internal until 21 Aug 2026, when it was sourced to Dynarex
+  `3681`, 240 per case.)
 - `unsourced` — deliberately open, permanently. Example: black nitrile
   gloves — Zach buys from whoever is cheapest at the time. Shannon prompts
   when stock is low and **never picks a supplier on his behalf**. A valid
@@ -567,25 +569,30 @@ floor = 2 × (4 + 2) = 12 → allocatable 28. FBA target = 8 × 29 = 232; FBA
 on-hand 80, inbound 0 → want 152, clamped to **send 28 now**; the rest
 comes from the 125-kit build. Walmart reserve 0 (no history).
 
-**Step 9 — FBA inbound plan** (after build, sending target 240): B ∈
-[5,10] → **B = 5 boxes, Q = 48 per box**, 5 × 48 = 240 exact (ties break
-toward fewer boxes, §8). The `channels: [fba]` BOM lines (suffocation
-bags, labels) are consumed against this 240, not against total sales.
+**Step 9 — FBA inbound plan:** the sending target is Step 8's answer,
+**28 units now**. Every box must be packed identically and the planner
+never overships, so B ∈ [5,10] with 28 units gives **B = 5 boxes, Q = 5
+per box** — 25 sent, 3 held back, the closest whole-box fit; ties break
+toward fewer boxes (§8). The
+`channels: [fba]` BOM lines (suffocation bags, labels) are consumed
+against the quantity actually being sent, not against total sales.
 
-> **Unresolved (raised in Phase 1, nothing changed):** the 240 above is
-> not derivable from Step 8. Step 8 allocates 40 on hand − 12 merchant
-> floor = 28 spare against an FBA want of 152, and even adding the whole
-> 125-kit build gives 153 at most, not 240. Phase 1 therefore implements
-> Step 8's allocation as written (it sends 28) and tests the box planner
-> separately against the stated target of 240 → 5 × 48. One of the two
-> numbers is wrong; deciding which is a business decision, so neither the
-> document nor the arithmetic was quietly adjusted to agree.
+> **Corrected 21 Aug 2026 (was 240).** Earlier drafts of this step said
+> the sending target was 240 and planned 5 boxes of 48. That figure is
+> stale: it is 8 weeks × 30/week, and FBA velocity in §10 is 29/week, so
+> the target is 8 × 29 = 232, of which 80 is already at FBA — a want of
+> 152, clamped by Step 8's 28 allocatable units. Nothing in the current
+> figures produces 240; even adding the entire 125-kit build reaches 153.
+> **The operational answer is 28.** The box planner is still tested
+> against 240 → 5 × 48 as an arithmetic case of its own (a round number
+> that exercises the exact-fit tie-break), but 240 is not a sending
+> target and must not be read as one.
 
 **Step 10 — supplier split:** 30-0001 (600) + 10-0042 (750) + ZZ-0034 (65
 two-packs) → NAR draft PO, staged as a narescue.com cart on approval
 (Tier 2), freight quote captured at checkout and reported. Dynarex 3161
-(320) → staged dynarex.com cart (Tier 2). `internal` (triangular bandage
-HMZ-0001) and `unsourced` (gloves) lines → gap-list prompts. The wall
+(320) and the triangular bandage 3681 → staged dynarex.com cart (Tier 2),
+in cases of 240. `unsourced` (gloves) lines → gap-list prompts. The wall
 mount → nowhere, by class.
 
 ## 11. Reconciliation with the working NAR reorder procedure
@@ -661,10 +668,11 @@ seen.
 Every report carries a **persistent, numbered parking lot** of unresolved
 issues — items neither fixable by Shannon nor blocking the whole run.
 Each item shows: ID (`PL-n`), description, what it blocks, and how long it
-has been open. Items are seeded in `config/ithrive/boms.yaml` (PL-1
-through PL-8 today: pouch sourcing, triangular-bandage supplier, SAM XT
-supplier, instruction-card mapping, glove-roll bag quantity, Express
-wall-mount SKU, Dynarex/World Richman lead times, FBA alias SKUs).
+has been open. Items are seeded in `config/ithrive/boms.yaml` — three
+today, after the 21 Aug 2026 sourcing answers closed five: **PL-1** Orca
+Tactical's lead time and the real Coyote/Multicam part numbers, **PL-4**
+the Basic-kit instruction card, and **PL-8** the Seller Central export
+that fills in the FBA aliases and sales ASINs.
 Shannon **adds** an item automatically when she hits an unresolvable line
 mid-run; she **removes** one only when Zach explicitly clears it. The
 parking lot never silently shrinks — that is the point.
@@ -680,11 +688,16 @@ stack traces**. Checks:
   `units_per_purchase_unit` (or an explicit `null` under discovery mode).
 - Every Amazon ASIN is exactly 10 alphanumeric characters.
 - Every `channels:` value names a configured channel.
-- Every BOM line references a component record — the committed file
-  deliberately contains one violation (`own_printed / CARD-TODO`,
-  instruction cards, parking-lot PL-4) that this check must catch.
-- Every kit alias maps to a real channel SKU (the `TODO` FBA aliases fail
-  until PL-8 is resolved).
+- Every BOM line references a component record. (The `own_printed /
+  CARD-TODO` dangling reference that used to be committed deliberately
+  was resolved on 21 Aug 2026; the check is proved against a fixture
+  config instead, never against production configuration.)
+- Every kit alias maps to a real channel SKU. An alias pointing at a
+  channel this business does not sell on is an error; an alias still
+  marked `TODO` is a **warning** naming the kit, the channel, the file
+  and the line — the gap is tracked as PL-8 and it under-counts that
+  kit's sales, but it does not stop a run that is useful for the other
+  kits.
 - `reorder_point ≤ reorder_target` (warning).
 - Every recipient role referenced by any notification rule (email or SMS)
   is mapped to a real address/number for this entity in

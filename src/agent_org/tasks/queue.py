@@ -109,17 +109,27 @@ class TaskQueue:
         self.audit.outcome(intent, {"task_state": task.state.value}, task_id=task.id)
         return task
 
-    def claim(self, kinds: tuple[str, ...] | None = None) -> Task | None:
-        """Take the oldest queued task, if any, and mark it RUNNING."""
+    def claim(
+        self, kinds: tuple[str, ...] | None = None, schedule_slot: str | None = None
+    ) -> Task | None:
+        """Take the oldest queued task, if any, and mark it RUNNING.
+
+        Naming a slot claims that slot and nothing else: a run for this week
+        must never pick up the task the scheduler queued for another week and
+        write that week's report under this week's numbers.
+        """
         clause = "AND kind = ANY(%s)" if kinds else ""
+        slot_clause = "AND schedule_slot = %s" if schedule_slot is not None else ""
         params: list[Any] = [self.entity_id]
         if kinds:
             params.append(list(kinds))
+        if schedule_slot is not None:
+            params.append(schedule_slot)
         with self.conn.cursor() as cur:
             cur.execute(
                 f"""
                 SELECT {COLUMNS} FROM tasks
-                 WHERE entity_id = %s AND state = 'QUEUED' {clause}
+                 WHERE entity_id = %s AND state = 'QUEUED' {clause} {slot_clause}
                  ORDER BY created_at
                  FOR UPDATE SKIP LOCKED
                  LIMIT 1

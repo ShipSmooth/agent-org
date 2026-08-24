@@ -14,6 +14,8 @@ from agent_org.broker.broker import ActionBroker, BrokerRefusal
 from agent_org.broker.executors.internal_report import ReportWriter, build_registry
 from agent_org.broker.proposals import ProposalStatus, fingerprint
 from agent_org.broker.registry import Executor
+from agent_org.config.errors import ConfigError
+from agent_org.config.loader import load_policy
 from agent_org.config.models import Capability, LoadedConfig
 from agent_org.db.connection import entity_session
 from agent_org.policy.engine import ActionContext, PolicyEngine, TrailingHistory
@@ -85,6 +87,44 @@ def test_a_purchase_with_too_little_history_is_tier_3(golden_config: LoadedConfi
     )
     assert decision.tier == 3
     assert "nothing can be called normal yet" in " ".join(decision.reasons)
+
+
+def test_an_entity_can_raise_a_global_tier_but_never_lower_one(tmp_path: Path) -> None:
+    """A business's own file may be stricter than the house rules and never
+    laxer, or the ceiling could be edited away one entity at a time."""
+    (tmp_path / "policy").mkdir()
+    (tmp_path / "policy" / "global.yaml").write_text(
+        "default_tier: 3\nmax_tier_this_phase: 0\n"
+        "rules:\n  - {action: nar.stage_cart, tier: 2}\n"
+        "  - {action: internal.write_draft_report, tier: 0}\n",
+        encoding="utf-8",
+    )
+    global_policy = tmp_path / "policy" / "global.yaml"
+    stricter = tmp_path / "stricter.yaml"
+    stricter.write_text(
+        "rules:\n  - {action: internal.write_draft_report, tier: 2}\n", encoding="utf-8"
+    )
+    engine = PolicyEngine(load_policy(global_policy, stricter))
+    assert engine.resolve("internal.write_draft_report").tier == 2
+    assert engine.resolve("nar.stage_cart").tier == 2
+
+    laxer = tmp_path / "laxer.yaml"
+    laxer.write_text("rules:\n  - {action: nar.stage_cart, tier: 0}\n", encoding="utf-8")
+    with pytest.raises(ConfigError) as caught:
+        load_policy(global_policy, laxer)
+    assert "may raise a tier, never lower one" in caught.value.findings[0].message
+
+
+def test_only_the_report_writer_is_wired_up_in_this_phase(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    tmp_path: Path,
+) -> None:
+    """Nothing that sends, buys or browses is registered at all, so it
+    could not run even if the policy said it might."""
+    with entity_session(app_conn, entity_id) as conn:
+        registry = build_registry(ReportWriter(conn=conn, entity_id=entity_id, output_dir=tmp_path))
+    assert sorted(registry.action_types()) == ["internal.write_draft_report"]
 
 
 def test_phase_1_refuses_anything_above_tier_0(
@@ -210,7 +250,14 @@ def test_a_deliberate_rerun_is_a_different_fingerprint() -> None:
     same = fingerprint("ithrive", "internal.write_draft_report", dict(payload), SLOT)
     rerun = fingerprint("ithrive", "internal.write_draft_report", payload, SLOT, "rerun-1")
     other_entity = fingerprint("limazulu", "internal.write_draft_report", payload, SLOT)
+    reordered = fingerprint(
+        "ithrive",
+        "internal.write_draft_report",
+        {"body": "a report", "filename": "report.md"},
+        SLOT,
+    )
     assert key == same
+    assert key == reordered, "the order keys happen to be written in must not matter"
     assert key != rerun
     assert key != other_entity
 

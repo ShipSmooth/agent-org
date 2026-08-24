@@ -6,14 +6,17 @@ importantly, that it does nothing else.
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
+from fractions import Fraction
 from pathlib import Path
 
 import psycopg
 import pytest
 
 from agent_org.cli import main
-from agent_org.config.models import LoadedConfig
+from agent_org.config.loader import load_config
+from agent_org.config.models import ComponentClass, ComponentKey, LoadedConfig
 from agent_org.db.connection import entity_session
 from agent_org.runtime.worker import (
     SHANNON_REPLENISHMENT,
@@ -21,10 +24,43 @@ from agent_org.runtime.worker import (
     run_replenishment,
 )
 from agent_org.scheduler.schedule import ScheduleError, is_due, parse
+from agent_org.shannon.calculator import ComponentPlan
 from agent_org.shannon.config_diff import ConfigSnapshot
+from agent_org.shannon.report import pack_overage_line
 
 DATA = Path(__file__).parent / "fixtures" / "golden" / "data"
 WHEN = datetime(2026, 3, 30, 6, 0, tzinfo=UTC)
+
+
+def _pack_plan(order_units: int, pack: int) -> ComponentPlan:
+    """One finished report line for a part sold only in whole cases."""
+    purchase_units = math.ceil(order_units / pack)
+    zero = Fraction(0)
+    return ComponentPlan(
+        key=ComponentKey("dynarex", "3681"),
+        name="Triangular Bandage 40x40x56in",
+        component_class=ComponentClass.REORDER_POINT,
+        supplier="dynarex",
+        standalone_units_sold=0,
+        standalone_weekly=zero,
+        standalone_demand=zero,
+        kit_demand=zero,
+        fba_prep_demand=zero,
+        safety_stock=zero,
+        gross_demand=Fraction(order_units),
+        on_hand=0,
+        on_order=0,
+        in_transit=0,
+        raw_net=Fraction(order_units),
+        net_units=order_units,
+        moq_rounded=order_units,
+        order_units=order_units,
+        units_per_purchase_unit=pack,
+        purchase_units=purchase_units,
+        actual_units=purchase_units * pack,
+        purchase_unit_name=f"case of {pack}",
+        routing="dynarex",
+    )
 
 
 @pytest.fixture
@@ -45,6 +81,63 @@ def report(
     assert summary.error is None
     assert summary.report_path is not None
     return Path(summary.report_path).read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def live_config_report(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    tmp_path: Path,
+) -> str:
+    """The same run, but against config/ithrive — the file Zach actually
+    edits — with sample saved exports standing in for the live accounts."""
+    config, _ = load_config(Path(__file__).resolve().parents[1] / "config", "ithrive")
+    with entity_session(app_conn, entity_id) as conn:
+        summary = run_replenishment(
+            conn=conn,
+            config=config,
+            fixtures=Path(__file__).parent / "fixtures" / "ithrive-sample",
+            output_dir=tmp_path,
+            now=datetime(2026, 5, 4, 6, 0, tzinfo=UTC),
+        )
+    assert summary.error is None, summary.error
+    assert summary.report_path is not None
+    return Path(summary.report_path).read_text(encoding="utf-8")
+
+
+def test_the_live_configuration_produces_a_report(live_config_report: str) -> None:
+    assert "BOM version: 2026-08-21" in live_config_report
+    assert "PHASE 1 — READ ONLY" in live_config_report
+    # Twelve kits, including the new wall-mounted Express kit.
+    assert "25-002" in live_config_report
+
+
+def test_the_largest_pack_size_shows_its_overage_rather_than_absorbing_it(
+    live_config_report: str,
+) -> None:
+    """Dynarex 3681 is 240 to a case. Buying whole cases always overshoots,
+    and the report has to say by how much rather than quietly rounding."""
+    assert "1850 → 1850 → 1850 → 8 → 1920   (case of 240)" in live_config_report
+    assert (
+        "pack rounding: 1920 arrive against a need of 1850 — 70 more than needed"
+        in live_config_report
+    )
+
+
+def test_a_need_of_300_against_a_240_case_shows_the_180_spare() -> None:
+    """The case Zach named: two cases, 480 units, 180 more than wanted. The
+    live figures never land on exactly 300, so the sentence is proved here."""
+    plan = _pack_plan(order_units=300, pack=240)
+    assert plan.purchase_units == 2
+    assert plan.actual_units == 480
+    line = pack_overage_line(plan)
+    assert line is not None
+    assert "480 arrive against a need of 300 — 180 more than needed" in line
+    assert "sold in 240s" in line
+
+
+def test_a_need_that_fills_whole_cases_exactly_says_nothing_about_overage() -> None:
+    assert pack_overage_line(_pack_plan(order_units=480, pack=240)) is None
 
 
 def test_the_run_writes_a_report_file(report: str) -> None:
@@ -74,6 +167,26 @@ def test_the_report_carries_the_gap_list_builds_and_parking_lot(report: str) -> 
     assert "KITS — BUILD RECOMMENDATIONS" in report
     assert "PARKING LOT" in report
     assert "IFAK-CAT" in report
+
+
+def test_the_report_states_non_stocked_lines_at_zero_rather_than_omitting_them(
+    report: str,
+) -> None:
+    """An omitted line and a zero line read the same on paper. Only the
+    second one proves the class did its job."""
+    assert "NOT STOCKED — QUANTITY 0, ALWAYS" in report
+    section = report.split("NOT STOCKED — QUANTITY 0, ALWAYS", 1)[1]
+    assert "WALL-MOUNT-01" in section.split("KITS —", 1)[0]
+    assert "order 0 (class non_stocked)" in section
+
+
+def test_the_report_shows_the_build_split_and_the_limiting_pouch(report: str) -> None:
+    builds = report.split("KITS — BUILD RECOMMENDATIONS", 1)[1]
+    assert "build 125" in builds
+    assert "split of those 125" in builds
+    assert "IFAK-CAT-COYOTE: build " in builds
+    assert "limited by" in builds
+    assert "MOLLE pouch, Coyote" in builds
 
 
 def test_the_report_reports_directive_text_without_following_it(report: str) -> None:
@@ -227,7 +340,18 @@ def test_a_weekly_schedule_is_due_on_its_morning_and_not_before() -> None:
     tuesday = datetime(2026, 3, 31, 6, 0, tzinfo=UTC)
     assert is_due("cron: 0 6 * * MON", monday_6am)
     assert not is_due("cron: 0 6 * * MON", monday_5am)
-    assert not is_due("cron: 0 6 * * MON", tuesday)
+    # Still owed on the Tuesday, because the Dell may have been off.
+    assert is_due("cron: 0 6 * * MON", tuesday)
+
+
+def test_a_missed_monday_is_caught_up_later_that_week_but_only_once() -> None:
+    """A week is never skipped for being missed, and never run twice."""
+    monday = datetime(2026, 3, 30, 6, 0, tzinfo=UTC)
+    wednesday = datetime(2026, 4, 1, 9, 0, tzinfo=UTC)
+    next_monday = datetime(2026, 4, 6, 6, 0, tzinfo=UTC)
+    assert is_due("cron: 0 6 * * MON", wednesday, last_run=None)
+    assert not is_due("cron: 0 6 * * MON", wednesday, last_run=monday)
+    assert is_due("cron: 0 6 * * MON", next_monday, last_run=monday)
 
 
 def test_a_schedule_that_cannot_be_read_is_rejected_by_name() -> None:

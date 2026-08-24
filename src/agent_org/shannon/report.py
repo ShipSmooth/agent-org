@@ -17,7 +17,7 @@ from fractions import Fraction
 
 from agent_org.config.models import ComponentClass, LoadedConfig
 from agent_org.integrations.reads import OrderSignals
-from agent_org.shannon.calculator import ReplenishmentResult
+from agent_org.shannon.calculator import ComponentPlan, ReplenishmentResult
 
 RULE = "=" * 78
 THIN = "-" * 78
@@ -30,6 +30,22 @@ def _n(value: Fraction | int) -> str:
     if value.denominator == 1:
         return str(value.numerator)
     return f"{float(value):.2f}"
+
+
+def pack_overage_line(plan: ComponentPlan) -> str | None:
+    """What a whole-pack purchase costs over what was needed, in words.
+
+    A case of 240 against a need of 300 brings 480: the 180 spare is a
+    decision Zach is making with his money, so it is said out loud.
+    """
+    if plan.actual_units is None or plan.actual_units <= plan.order_units:
+        return None
+    over = plan.actual_units - plan.order_units
+    return (
+        f"pack rounding: {plan.actual_units} arrive against a need of "
+        f"{plan.order_units} — {over} more than needed, because this is only "
+        f"sold in {plan.units_per_purchase_unit}s."
+    )
 
 
 @dataclass(frozen=True)
@@ -98,6 +114,9 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
             f"{purchase} → {actual}"
             + (f"   ({plan.purchase_unit_name})" if plan.purchase_unit_name else "")
         )
+        overage = pack_overage_line(plan)
+        if overage is not None:
+            add(f"      {overage}")
         if plan.component_class is ComponentClass.REORDER_POINT:
             # Nothing is forecast for these: they are topped back up to a
             # fixed level whenever they fall below a fixed trigger.
@@ -125,14 +144,30 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
 
     add("NOTHING TO ORDER THIS WEEK")
     add(THIN)
-    quiet = [plan for plan in result.components if plan.order_units <= 0]
-    for plan in quiet:
-        reason = (
-            "not stocked, never purchased"
-            if plan.component_class is ComponentClass.NON_STOCKED
-            else f"covered — on hand {plan.on_hand}, on order {plan.on_order}"
+    for plan in result.components:
+        if plan.order_units > 0 or plan.component_class is ComponentClass.NON_STOCKED:
+            continue
+        add(
+            f"  {plan.key}  {plan.name}: covered — on hand {plan.on_hand}, on order {plan.on_order}"
         )
-        add(f"  {plan.key}  {plan.name}: {reason}")
+    add("")
+
+    # Stated, never omitted: a missing line and a zero line read the same on
+    # paper, and only one of them proves the class did its job.
+    add("NOT STOCKED — QUANTITY 0, ALWAYS")
+    add(THIN)
+    non_stocked = [
+        plan for plan in result.components if plan.component_class is ComponentClass.NON_STOCKED
+    ]
+    if not non_stocked:
+        add("  No non-stocked components in this parts list.")
+    for plan in non_stocked:
+        add(f"  {plan.key}  {plan.name}")
+        add(
+            f"      order 0 (class non_stocked). Demand of {_n(plan.gross_demand)} from the "
+            "kits is listed for costing only; Shannon never buys this line and never "
+            "lets it block a build."
+        )
     add("")
 
     add("KITS — BUILD RECOMMENDATIONS")
@@ -146,13 +181,17 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
             f"({_n(kit.weekly_velocity)}/week), assembled stock {kit.assembled_stock}"
             f"  →  build {kit.build_recommendation}"
         )
+        if len(kit.members) > 1:
+            add(f"      split of those {kit.build_recommendation}:")
         for member in kit.members:
-            if member.limiting_note is None:
-                continue
-            add(
-                f"      {member.kit_group}: can build {member.buildable_now} right "
-                f"now — {member.limiting_note}"
+            detail = (
+                f"      {member.kit_group}: build {member.build_share} "
+                f"(demand {member.demand_units}, stock {member.assembled_stock}); "
+                f"can build {member.buildable_now} from stock on hand"
             )
+            add(detail)
+            if member.limiting_note:
+                add(f"        limited by {member.limiting_note}")
             if member.build_blocked:
                 add(f"        {member.build_blocked}")
         if kit.unresolved_aliases:

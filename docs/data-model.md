@@ -41,7 +41,7 @@ CREATE TABLE components (
                    --               fails loudly if its class routes to any
                    --               purchase path (zero rows today)
                    --   'internal'  stock held loose, no supplier attached
-                   --               yet — reports/prompts only (HMZ-0001)
+                   --               yet — reports/prompts only (wall mount)
                    --   'unsourced' deliberately open, permanently — prompt
                    --               Zach, never pick a supplier (gloves)
     supplier_part_no TEXT NOT NULL,

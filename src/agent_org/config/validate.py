@@ -4,10 +4,11 @@ This command runs before every execution. Zach maintains the parts list by
 hand; this is what makes that safe. Every message names a file and a line
 and says what to do about it.
 
-The committed BOM deliberately fails two of these checks (the
-`own_printed / CARD-TODO` dangling reference and the `TODO` FBA aliases) —
-they are real, open, parking-lot items, and a validator that passed them
-would be lying.
+The committed BOM is expected to pass. Unresolved channel SKUs are the one
+known gap (parking-lot item PL-8): they are reported as warnings every run,
+because they under-count that kit's sales, but they do not stop a run that
+is useful for the other kits. The error paths are proved against
+tests/fixtures/invalid, a configuration broken on purpose.
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from fractions import Fraction
 
 from agent_org.config.errors import Finding, Severity, error, warning
 from agent_org.config.models import (
@@ -24,6 +24,7 @@ from agent_org.config.models import (
     ComponentClass,
     ComponentKey,
     LoadedConfig,
+    cover_target_for,
 )
 from agent_org.config.yamlsource import Loc
 
@@ -181,7 +182,7 @@ def _check_lead_time(config: LoadedConfig, key: ComponentKey) -> list[Finding]:
     supplier = config.boms.suppliers.get(key.supplier)
     if supplier is None or supplier.lead_time_weeks is None:
         return []
-    cover: Fraction = component.cover_target_weeks or config.shannon.parameters.cover_target_weeks
+    cover = cover_target_for(component, supplier, config.shannon.parameters.cover_target_weeks)
     if cover < supplier.lead_time_weeks:
         return [
             error(
@@ -229,16 +230,15 @@ def _check_kits(config: LoadedConfig, channel_keys: set[str]) -> list[Finding]:
                 )
             if sku is None:
                 findings.append(
-                    error(
+                    warning(
                         f"Kit '{kit_group}' has no SKU for the '{channel_key}' channel — "
-                        "the file says TODO. Sales on that channel would not be counted, "
-                        "so Shannon would under-order everything in this kit.",
+                        "the file says TODO, so sales on that channel are not counted "
+                        "and this kit will be under-ordered until the real SKU is in.",
                         kit.loc,
                         fix=(
                             "Export the channel SKUs from Seller Central and paste the "
                             "real value in (parking-lot item PL-8)."
                         ),
-                        blocks_run=False,
                     )
                 )
                 continue

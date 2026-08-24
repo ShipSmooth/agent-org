@@ -21,25 +21,16 @@ suppliers:
     lead_time_weeks: 3
   dynarex:
     capabilities: [read_catalog, stage_cart]
-    lead_time_weeks: 1           # ~5 business days (Zach, 21 Aug 2026)
+    lead_time_weeks: null        # PL-7 — Zach to provide
   amazon_business:
     capabilities: [stage_cart]
     lead_time_weeks: 1
   world_richman:
     capabilities: [report_only]
-    lead_time_weeks: 9           # ~60 calendar days (Zach, 21 Aug 2026)
-    cover_target_weeks: 13       # 9 lead + 4 buffer. The global target of 7 is
-                                 # inclusive of lead time, so 7 < 9 would be a
-                                 # config-load failure; this override is required.
-  sam_medical:
-    capabilities: [report_only]  # bought direct, by purchase order
-    lead_time_weeks: 2           # ~14 calendar days (Zach, 21 Aug 2026)
-  orca_tactical:
-    capabilities: [report_only]
-    lead_time_weeks: null        # PL-1 — Zach to provide
+    lead_time_weeks: null        # PL-7 — Zach to provide
   own_printed:
     capabilities: [report_only]
-    lead_time_weeks: 2           # ~10 business days, both printers
+    lead_time_weeks: null
   internal:
     capabilities: [report_only]
     lead_time_weeks: null

@@ -93,8 +93,8 @@ supplier decides how it can be bought — NAR and Dynarex via the browser
 (cart staged, never checked out), Amazon Business via a cart link, World
 Richman and printed cards by hand from the report. Three "no supplier"
 situations are kept distinct: **pending** (a mistake to fix — none exist
-today), **internal** (you hold stock loose, like the ~2,000 triangular
-bandages — Shannon reports, never orders), and **unsourced** (deliberately
+today), **internal** (you hold stock loose, like the wall mount — Shannon
+reports, never orders), and **unsourced** (deliberately
 open, like the nitrile gloves you buy from whoever is cheapest — Shannon
 prompts you when stock is low and never picks a supplier for you).
 

@@ -41,9 +41,15 @@ class WeeklySchedule:
     minute: int
 
     def is_due(self, now: datetime, last_run: datetime | None = None) -> bool:
-        if now.weekday() != self.weekday:
+        """Due from its moment on, until that week's run has happened.
+
+        A missed Monday — the Dell rebooting, a power cut — must not mean a
+        skipped week. The run is keyed to the ISO week, so catching up on
+        the Wednesday runs it once, not twice.
+        """
+        if now.weekday() < self.weekday:
             return False
-        if (now.hour, now.minute) < (self.hour, self.minute):
+        if now.weekday() == self.weekday and (now.hour, now.minute) < (self.hour, self.minute):
             return False
         if last_run is None:
             return True

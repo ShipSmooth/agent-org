@@ -146,6 +146,19 @@ def test_build_recommendations_are_125_and_19(result: ReplenishmentResult) -> No
     assert compact.build_recommendation == 19
 
 
+def test_the_family_build_is_split_across_the_colourways_without_drift(
+    result: ReplenishmentResult,
+) -> None:
+    """Both views, one number: the family is forecast together, but the build
+    sheet has to say how many of each colourway to make."""
+    ifak = result.kit("IFAK-CAT")
+    shares = {member.kit_group: member.build_share for member in ifak.members}
+    assert sum(shares.values()) == ifak.build_recommendation == 125
+    assert all(share >= 0 for share in shares.values())
+    # The two colourways with no stock of their own carry the largest shares.
+    assert shares["IFAK-CAT-COYOTE"] >= shares["IFAK-CAT-BLACK"]
+
+
 def test_coyote_and_multicam_cannot_be_built_and_the_pouch_is_named(
     result: ReplenishmentResult,
 ) -> None:
@@ -180,9 +193,25 @@ def test_full_ifak_allocation_sends_28_now(result: ReplenishmentResult) -> None:
 # --- Step 9: FBA box plan -------------------------------------------------
 
 
+def test_the_sending_target_is_step_8s_28_not_the_stale_240(
+    result: ReplenishmentResult,
+) -> None:
+    """Settled 21 Aug 2026. §9 used to say the target was 240; that is 8 weeks
+    × 30/week, and FBA velocity is 29/week, so the target is 232 against 80
+    already at FBA — a want of 152, clamped by §8's 28 allocatable units."""
+    assert result.fba_send_targets["IFAK-CAT"] == 28
+    plan = result.box_plan
+    assert plan is not None
+    assert 5 <= plan.boxes <= 10
+    # Equal boxes cannot hit 28 exactly inside 5–10 boxes; the planner takes
+    # the closest whole-box fit rather than overshipping.
+    assert plan.planned("IFAK-CAT") == 25
+    assert plan.error == 3
+
+
 def test_a_240_unit_shipment_packs_as_5_boxes_of_48() -> None:
-    """§9's stated case. Note the target it states, 240, is not what §8's own
-    arithmetic produces (28); see the disagreement recorded in the PR."""
+    """The box planner in its own right: 240 is an exact-fit arithmetic case
+    that exercises the tie-break, not a sending target for anything."""
     plan = plan_boxes({"IFAK-CAT": 240}, box_min=5, box_max=10, overship_tolerance=0)
     assert plan is not None
     assert plan.boxes == 5

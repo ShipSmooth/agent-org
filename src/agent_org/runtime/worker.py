@@ -88,7 +88,7 @@ def run_replenishment(
     queue = TaskQueue(conn=conn, entity_id=entity_id, audit=audit)
     slot = schedule_slot(SHANNON_REPLENISHMENT, moment)
     queue.enqueue(SHANNON_REPLENISHMENT, slot)
-    task = queue.claim((SHANNON_REPLENISHMENT,))
+    task = queue.claim((SHANNON_REPLENISHMENT,), schedule_slot=slot)
     if task is None:
         raise RunAlreadyDone(
             f"This week's replenishment run ({slot}) has already been carried out. "

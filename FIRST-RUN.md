@@ -146,7 +146,7 @@ uv run shannon migrate
 Expected, the first time:
 
 ```
-Database updated: 0001_schema.sql, 0002_rls.sql, 0003_grants.sql
+Database updated: 0001_schema.sql, 0002_rls.sql, 0003_grants.sql, 0004_entity_scope_function.sql
 ```
 
 Run it again and it says `Database is already up to date.` That is fine;
@@ -159,7 +159,7 @@ uv run shannon sync-config
 ```
 
 ```
-Copied the configuration into the database: bom_lines 115, channels 5, components 39, kits 11, suppliers 7
+Copied the configuration into the database: bom_lines 135, channels 5, components 40, kits 12, suppliers 9
 ```
 
 ---
@@ -173,11 +173,26 @@ uv run shannon validate-config
 This reads the parts lists, suppliers and policies and tells you, in
 English, anything that would make a week's numbers wrong.
 
-**Today it deliberately fails.** Two known gaps were left in the
-configuration on purpose, and this command is what proves they are
-caught: a kit refers to a printed card (`CARD-TODO`) that is not in the
-parts list, and several kits have `TODO` where their Amazon FBA SKU
-should be. Each is reported with the file, the line and what to do:
+**A pass looks like this** — no `ERROR` lines at all, and a last line
+saying so. This is what today's configuration produces:
+
+```
+Configuration for iThrive Medical LLC (ithrive)
+BOM version: 2026-08-21
+Configuration fingerprint: 77aec4952c4d1415
+
+40 components, 12 kits, 9 suppliers, 5 sales channels.
+
+No problems. 24 warning(s) — worth reading, but nothing that stops a run.
+```
+
+Most of those warnings are the same open item said once per kit: the
+Amazon FBA and Shopify SKUs still read `TODO`, because they come from a
+Seller Central export you have not done yet (parking-lot item PL-8).
+Until they are in, sales on those channels are not counted and those
+kits are under-ordered. Each warning names the file and the line.
+
+An `ERROR` looks like this — you should not see one today:
 
 ```
 ERROR   config/ithrive/boms.yaml:294
@@ -186,22 +201,6 @@ ERROR   config/ithrive/boms.yaml:294
         What to do: Add the component to the 'components:' block, or correct the
         part number on this line.
 ```
-
-**A pass looks like this** — no `ERROR` lines at all, and a last line
-saying so:
-
-```
-Configuration for iThrive Medical LLC (ithrive)
-BOM version: 2026-08-20
-Configuration fingerprint: 902a8033079dcc7b
-39 components, 11 kits, 7 suppliers, 5 sales channels.
-
-No problems. 3 warning(s) — worth reading, but nothing that stops a run.
-```
-
-Today the same command ends with `19 problem(s) and 11 warning(s)`
-instead: the two deliberate gaps above, plus the parts they leave
-unresolved.
 
 Warnings are not failures. A warning is something worth reading. An error
 that concerns one line of the parts list does not stop the whole run: that
@@ -316,10 +315,10 @@ That sets the account's password to whatever `.env` now says.
 section.**
 That is the intended behaviour, not a crash: a part Shannon cannot trust
 is not counted. Fix the file and line named in the message and run
-`validate-config` again. The two known outstanding items — the
-`CARD-TODO` card and the `TODO` FBA SKUs — need real values from Seller
-Central and from whoever prints the cards. Until then those kits appear
-under BLOCKED in every report.
+`validate-config` again. The one known outstanding item today is the
+`TODO` FBA and Shopify SKUs, which need the Seller Central export
+(parking-lot item PL-8). Those are warnings, not errors: the run still
+happens, but sales on those channels are not counted.
 
 A fourth, less likely: **"Veeqo export not found"** or a message about an
 unreadable cell. The export folder is missing a file, or a cell that

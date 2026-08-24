@@ -51,6 +51,10 @@ class Supplier:
     acquisition: str
     capabilities: frozenset[Capability]
     lead_time_weeks: Fraction | None
+    # A supplier slower than the global cover target needs its own target: the
+    # cover target is inclusive of lead time, so 7 weeks of cover cannot buy
+    # from a supplier that takes 9 weeks to deliver.
+    cover_target_weeks: Fraction | None
     loc: Loc
 
     def can(self, capability: Capability) -> bool:
@@ -79,6 +83,18 @@ class Component:
     @property
     def supplier(self) -> str:
         return self.key.supplier
+
+
+def cover_target_for(
+    component: Component | None, supplier: Supplier | None, default: Fraction
+) -> Fraction:
+    """Weeks of cover for one component: the component's own figure wins, then
+    its supplier's, then the entity default."""
+    if component is not None and component.cover_target_weeks is not None:
+        return component.cover_target_weeks
+    if supplier is not None and supplier.cover_target_weeks is not None:
+        return supplier.cover_target_weeks
+    return default
 
 
 @dataclass(frozen=True)

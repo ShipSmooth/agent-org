@@ -61,6 +61,10 @@ def classify(subject: str) -> str | None:
     return None
 
 
+def _describe(lines: dict[str, int]) -> str:
+    return ", ".join(f"{sku} × {qty}" for sku, qty in sorted(lines.items()))
+
+
 def find_directives(text: str) -> tuple[str, ...]:
     lowered = text.lower()
     return tuple(phrase for phrase in DIRECTIVE_PHRASES if phrase in lowered)
@@ -134,6 +138,14 @@ class GmailFixtureClient:
             for line in lines:
                 sku = str(line["sku"])
                 parsed[sku] = parsed.get(sku, 0) + int(line["qty"])
+            existing = confirmations.get(base)
+            if existing is not None and existing.lines != parsed:
+                raise AmbiguousOrderSignal(
+                    f"Order {base} has two confirmation emails that disagree about "
+                    f"what was ordered ({_describe(existing.lines)} against "
+                    f"{_describe(parsed)}). Shannon cannot tell which is current, so "
+                    "the run stops rather than guess what is already on order."
+                )
             confirmations[base] = OrderEmail(
                 kind=CONFIRMATION,
                 order_number=order_number,

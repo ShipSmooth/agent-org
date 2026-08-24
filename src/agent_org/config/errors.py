@@ -26,8 +26,8 @@ class Finding:
     fix: str | None = None
     # Some errors are fatal to the whole run (a parameter that cannot be
     # read); others spoil one line or one kit and nothing else — a
-    # component reference pointing at nothing, a channel SKU still marked
-    # TODO. `shannon validate-config` fails on both. A run stops on the
+    # component reference pointing at nothing.
+    # `shannon validate-config` fails on both. A run stops on the
     # first kind and carries on for the second, reporting the affected
     # lines as blocked, because a report about the other forty components
     # is worth having.

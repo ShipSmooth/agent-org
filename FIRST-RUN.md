@@ -121,6 +121,22 @@ accounting). `.env.example` says where each is obtained. Never paste a
 password into a source file; `.env` is the only place, and it is never
 committed.
 
+**One file, read by both halves.** `docker compose` reads `.env` from the
+folder you run it in, and so does Shannon — she looks for it in the current
+folder and then in each folder above it, so it works from anywhere inside
+`agent-org`. Filling in `.env` is all you have to do; nothing needs
+exporting into PowerShell by hand.
+
+If you ever want to override one value for one command without editing the
+file, set it in the shell — a real environment variable always beats the
+file. And if `.env` lives somewhere else, point at it:
+`$env:AGENT_ORG_ENV_FILE = "C:\path\to\my.env"`.
+
+A file saved by Notepad is fine, byte-order mark and all; so is one
+written with `Set-Content`. Values are literal text — quotes are not
+needed, and `${OTHER_VALUE}` is expanded exactly as `docker compose`
+expands it.
+
 ---
 
 ## 3. Start the database
@@ -159,7 +175,7 @@ uv run shannon sync-config
 ```
 
 ```
-Copied the configuration into the database: bom_lines 135, channels 5, components 40, kits 12, suppliers 9
+Copied the configuration into the database: bom_lines 135, channels 5, components 42, kits 12, suppliers 9
 ```
 
 ---
@@ -304,10 +320,24 @@ reason. She never guesses.
 
 ---
 
-## 7. When it fails — the three likeliest causes
+## 7. When it fails — the likeliest causes
 
-**1. "DATABASE_URL is not set", or the run hangs and then says it cannot
-connect.**
+**1. "DATABASE_URL is not set".**
+The message names the file it looked in and whether it found it — read that
+line first:
+
+```
+DATABASE_URL is not set. I looked for it in this command's environment, and
+in C:\Users\Zach\agent-org\.env (not found).
+```
+
+*not found* means the file is not where the command was run from, or is
+named something else — `dir .env*` in that folder will show `.env.txt` if
+Windows added an extension. *found* means the file was read but has no
+`DATABASE_URL` line, or the line is blank. Either way it is the file, not
+Docker.
+
+**2. The run hangs and then says it cannot connect to the database.**
 Docker Desktop is not running, or the database container is not up. Start
 Docker Desktop, wait for the whale icon to settle, then:
 
@@ -325,7 +355,7 @@ docker compose logs postgres
 A complaint about `POSTGRES_PASSWORD` means `.env` is missing or that
 line is blank.
 
-**2. "password authentication failed for user agent_org_app".**
+**3. "password authentication failed for user agent_org_app".**
 You changed `POSTGRES_APP_PASSWORD` in `.env` after the first `migrate`.
 The database still holds the old one. Re-run:
 
@@ -335,7 +365,7 @@ uv run shannon migrate
 
 That sets the account's password to whatever `.env` now says.
 
-**3. `validate-config` reports errors, or the report has a long BLOCKED
+**4. `validate-config` reports errors, or the report has a long BLOCKED
 section.**
 That is the intended behaviour, not a crash: a part Shannon cannot trust
 is not counted. Fix the file and line named in the message and run
@@ -344,10 +374,31 @@ IFAK's missing Shopify SKU. That is a warning, not an error: the run still
 happens, but its Shopify sales are not counted. Amazon SKUs are no longer
 outstanding — they are in `config/ithrive/listings.yaml` (PL-8, closed).
 
-A fourth, less likely: **"Veeqo export not found"** or a message about an
+A fifth, less likely: **"Veeqo export not found"** or a message about an
 unreadable cell. The export folder is missing a file, or a cell that
 should hold a number holds something else. Shannon stops rather than
 guess; re-export from Veeqo and try again.
+
+---
+
+## 7a. Windows, specifically
+
+Everything above is written for Windows, and these are the details that
+differ from the machine Shannon was built on:
+
+- **Paths.** Shannon builds every path with Windows' own rules, so
+  `reports\replenishment-2026-08-24-ithrive.txt` is normal output, not a
+  mistake. `--output` and `--fixtures` accept Windows paths.
+- **The report opens in Notepad.** It is written with Windows line endings,
+  so it will not appear as one long line. The copy stored in the database
+  keeps plain line endings, which is what a database should hold.
+- **Byte-order marks are tolerated.** Notepad, and PowerShell's `utf8`
+  encoding, add invisible bytes to the front of a file. `.env`, the
+  configuration YAML and the saved exports are all read in a way that
+  ignores them.
+- **The port.** `docker-compose.yml` publishes 5432. If Docker Desktop
+  shows something else against the `postgres` container, the two URLs in
+  `.env` must use that number instead.
 
 ---
 

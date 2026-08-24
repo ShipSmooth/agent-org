@@ -84,7 +84,7 @@ class GmailFixtureClient:
                 f"Gmail fixture '{path}' is missing, so what is already on order "
                 "cannot be established. The run stops rather than risk ordering twice."
             )
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8-sig"))
 
     def read_order_signals(self) -> OrderSignals:
         data = self._load()

@@ -56,9 +56,12 @@ def test_the_schedule_command_lists_what_is_wired(capsys: pytest.CaptureFixture[
 
 
 def test_a_command_needing_the_database_says_what_to_do_without_one(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    # Somewhere with no .env: the CLI reads one where it exists, and this
+    # test is about the message when there is nothing to read.
+    monkeypatch.chdir(tmp_path)
     code = main(["--config-root", str(GOLDEN_CONFIG), "migrate"])
     out = capsys.readouterr().out
     assert code == 1

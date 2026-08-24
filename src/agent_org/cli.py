@@ -25,6 +25,7 @@ from agent_org.db.connection import (
 )
 from agent_org.db.migrate import run_migrations
 from agent_org.db.sync import sync_config
+from agent_org.env import load_env_file
 from agent_org.integrations.reads import ReadFailure
 from agent_org.runtime.worker import RunAlreadyDone, run_replenishment
 from agent_org.scheduler.schedule import ScheduleError, is_due
@@ -93,6 +94,12 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         if settings.app_password:
             set_app_password(conn, settings.app_password)
         conn.commit()
+    if not settings.app_password:
+        print(
+            "POSTGRES_APP_PASSWORD is blank, so Shannon's own database account "
+            "was left as it was. Fill it in and run `shannon migrate` again, or "
+            "`shannon run` will be refused with a password error."
+        )
     if result.applied:
         print("Database updated: " + ", ".join(result.applied))
     else:
@@ -221,6 +228,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Before anything resolves configuration: `docker compose` reads .env, so
+    # Shannon reads the same file. Anything already in the real environment
+    # wins, so a value can be overridden for one command without editing it.
+    load_env_file()
     args = build_parser().parse_args(argv)
     try:
         exit_code: int = args.func(args)

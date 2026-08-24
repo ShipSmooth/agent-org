@@ -54,8 +54,13 @@ def loc_of(value: Any, fallback: Loc = UNKNOWN_LOC) -> Loc:
 
 
 def load_yaml_file(path: Path) -> Any:
-    """Load one YAML file, preserving source locations."""
-    text = path.read_text(encoding="utf-8")
+    """Load one YAML file, preserving source locations.
+
+    `utf-8-sig` because Windows Notepad and PowerShell's default `utf8`
+    encoding write a byte-order mark, and a file that looks identical on
+    screen would otherwise fail to parse on its first character.
+    """
+    text = path.read_text(encoding="utf-8-sig")
     return load_yaml_text(text, str(path))
 
 

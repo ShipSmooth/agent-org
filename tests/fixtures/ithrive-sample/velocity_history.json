@@ -8,7 +8,7 @@
   ],
   "window_days": 365,
   "rows": [
-    {"sku": "#25-010", "units_sold": 96, "by_channel": {"fba": 96}},
-    {"sku": "9J-D3HQ-S3Y4", "units_sold": 52, "by_channel": {"fbm": 52}}
+    {"sku": "#25-010", "units_sold": 96, "by_channel": {"amazon_fba": 96}},
+    {"sku": "9J-D3HQ-S3Y4", "units_sold": 52, "by_channel": {"amazon_fbm": 52}}
   ]
 }

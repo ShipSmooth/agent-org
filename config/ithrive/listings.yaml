@@ -22,47 +22,47 @@ extracted: 2026-08-24
 kits:
   25-001:
     sales_asin: B0DFTRD9FV
-    fba: "GK-VQI5-LWIS"
-    fbm: "4N-Z3KD-LMLO"
+    amazon_fba: "GK-VQI5-LWIS"
+    amazon_fbm: "4N-Z3KD-LMLO"
   25-010:
     sales_asin: B0F6TSVJZX
-    fba: {sku: "#25-010", status: inactive}       # out of stock, delisted by Zach
-    fbm: {sku: "#25-010-FBM", status: inactive}   # out of stock, delisted by Zach
+    amazon_fba: {sku: "#25-010", status: inactive}       # out of stock, delisted by Zach
+    amazon_fbm: {sku: "#25-010-FBM", status: inactive}   # out of stock, delisted by Zach
   26-001:
     sales_asin: B0FM8SVNC5
-    fba: {sku: "7W-6KQU-VQLZ", status: inactive}
-    fbm: "VJ-4L8X-HF6C"
+    amazon_fba: {sku: "7W-6KQU-VQLZ", status: inactive}
+    amazon_fbm: "VJ-4L8X-HF6C"
   26-002:
     sales_asin: B0FRK51ZP7
-    fba: {sku: "YA-AIXQ-DFVW", status: inactive}
-    fbm: "AM-DOJL-04ZU"
+    amazon_fba: {sku: "YA-AIXQ-DFVW", status: inactive}
+    amazon_fbm: "AM-DOJL-04ZU"
   IFAK-CAT-BLACK:
     sales_asin: B0D368FNLH
-    fba: "05-MN0Y-QNA3"
-    fbm: "EV-HTQ6-X3U4"
+    amazon_fba: "05-MN0Y-QNA3"
+    amazon_fbm: "EV-HTQ6-X3U4"
   IFAK-CAT-COMPACT:
     sales_asin: B0HD8RN3NS
-    fba: null            # no listing on this channel
-    fbm: "EA-OASB-I658"
+    amazon_fba: null            # no listing on this channel
+    amazon_fbm: "EA-OASB-I658"
   IFAK-CAT-COYOTE:
     sales_asin: B0FMHNPB4M
-    fba: null            # no listing on this channel
-    fbm: {sku: "9J-D3HQ-S3Y4", status: inactive}
+    amazon_fba: null            # no listing on this channel
+    amazon_fbm: {sku: "9J-D3HQ-S3Y4", status: inactive}
   IFAK-CAT-GREEN:
     sales_asin: B0D369KJGV
-    fba: {sku: "BZ-V99M-ZKRI", status: inactive}
-    fbm: "H1-N3HD-QGG4"
+    amazon_fba: {sku: "BZ-V99M-ZKRI", status: inactive}
+    amazon_fbm: "H1-N3HD-QGG4"
   IFAK-CAT-MULTICAM:
     sales_asin: B0FMH5BRD6
-    fba: {sku: "FB-4Z14-IX1U", status: inactive}
-    fbm: {sku: "TI-EGGD-FYKZ", status: inactive}
+    amazon_fba: {sku: "FB-4Z14-IX1U", status: inactive}
+    amazon_fbm: {sku: "TI-EGGD-FYKZ", status: inactive}
 
   # Kits with NO Amazon listing of any kind. They sell on Shopify and direct only,
   # so their Amazon velocity is structurally zero — not missing data.
   # CONFIRMED by Zach, 24 Aug 2026: this is not a gap and is never reported as one.
-  "20-314": {sales_asin: null, fba: null, fbm: null}   # Essential — Mobile
-  "20-315": {sales_asin: null, fba: null, fbm: null}   # Essential — Wall Mounted
-  "25-002": {sales_asin: null, fba: null, fbm: null}   # Express — Wall Mounted
+  "20-314": {sales_asin: null, amazon_fba: null, amazon_fbm: null}   # Essential — Mobile
+  "20-315": {sales_asin: null, amazon_fba: null, amazon_fbm: null}   # Essential — Wall Mounted
+  "25-002": {sales_asin: null, amazon_fba: null, amazon_fbm: null}   # Express — Wall Mounted
 
 unresolved_listings:
   - asin: B0D36H1GJN
@@ -135,13 +135,13 @@ cat_gen7_attribution:
   resolved: 2026-08-24
   source: "Zach, from Veeqo / Seller Central"
   by_channel_sku:
-    "0Z-RQ1G-J36O": {part: "30-0023", colour: orange, asin: B07CP6Z1C4, channel: fba,  status: active}
-    "RJ-54G8-ZQDY": {part: "30-0023", colour: orange, asin: B07CP6Z1C4, channel: fba,  status: active}
-    "VR-BODU-ZKN6": {part: "30-0023", colour: orange, asin: B07CP6Z1C4, channel: fbm,  status: inactive}
-    "5G-AP1S-TUE4": {part: "30-0001", colour: black,  asin: B01ITAKG6A, channel: fbm,  status: active}
-    "Q3-MWFF-Y7P4": {part: "30-0001", colour: black,  asin: B01ITAKG6A, channel: fba,  status: active}
-    "DU-AEBP-B9VE": {part: "30-0033", colour: blue,   asin: B003IRJGW0, channel: fba,  status: active}
-    "KV-UTKS-EZMH": {part: "30-0033", colour: blue,   asin: B003IRJGW0, channel: fbm,  status: active}
+    "0Z-RQ1G-J36O": {part: "30-0023", colour: orange, asin: B07CP6Z1C4, channel: amazon_fba,  status: active}
+    "RJ-54G8-ZQDY": {part: "30-0023", colour: orange, asin: B07CP6Z1C4, channel: amazon_fba,  status: active}
+    "VR-BODU-ZKN6": {part: "30-0023", colour: orange, asin: B07CP6Z1C4, channel: amazon_fbm,  status: inactive}
+    "5G-AP1S-TUE4": {part: "30-0001", colour: black,  asin: B01ITAKG6A, channel: amazon_fbm,  status: active}
+    "Q3-MWFF-Y7P4": {part: "30-0001", colour: black,  asin: B01ITAKG6A, channel: amazon_fba,  status: active}
+    "DU-AEBP-B9VE": {part: "30-0033", colour: blue,   asin: B003IRJGW0, channel: amazon_fba,  status: active}
+    "KV-UTKS-EZMH": {part: "30-0033", colour: blue,   asin: B003IRJGW0, channel: amazon_fbm,  status: active}
   # Each ASIN resolves to exactly one colour — a good sign the mapping is sound:
   by_asin:
     B07CP6Z1C4: "30-0023"   # orange

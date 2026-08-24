@@ -21,19 +21,23 @@ the arithmetic can be reproduced:
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import date
 from enum import Enum
 from fractions import Fraction
 
 from agent_org.config.listings import ListingSet
 from agent_org.config.models import (
+    MANUAL_COUNT_STALE_AFTER_DAYS,
+    STOCK_SOURCE_VEEQO,
     Capability,
     Component,
     ComponentClass,
     ComponentKey,
     Kit,
     LoadedConfig,
+    ManualStock,
     Parameters,
     cover_target_for,
 )
@@ -57,10 +61,35 @@ class Sufficiency(str, Enum):
     NO_DEMAND = "no_demand"
     CANNOT_ASSESS = "cannot_assess"
     BLOCKING_BUILD = "blocking_build"
+    # Below its reorder point, and Shannon has already said so once against
+    # this same hand count. Repeating it weekly is how a report gets ignored.
+    ALREADY_PROPOSED = "already_proposed"
 
 
 def ceil_fraction(value: Fraction) -> int:
     return math.ceil(value)
+
+
+def in_words(count: int) -> str:
+    """4,000 rather than 4000: these are read aloud off a shelf."""
+    return f"{count:,}"
+
+
+def day_and_month(when: date) -> str:
+    """26 Aug. Not %-d, which does not exist on the Windows machine this runs on."""
+    return f"{when.day} {when:%b}"
+
+
+def age_in_words(days: int) -> str:
+    """How old a hand count is, said the way a person would say it."""
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if days < 14:
+        return f"{days} days ago"
+    weeks = days // 7
+    return f"{weeks} weeks ago"
 
 
 def format_number(value: Fraction | int) -> str:
@@ -260,7 +289,17 @@ class ComponentPlan:
     routing: str
     reorder_point: int | None = None
     reorder_target: int | None = None
+    # "When I get to 200, order 1,000" — a fixed quantity, not a level.
+    reorder_quantity: int | None = None
     available: int | None = None
+    # 'veeqo', or 'manual' for the parts Zach counts on a shelf.
+    stock_source: str = STOCK_SOURCE_VEEQO
+    manual_count: int | None = None
+    manual_counted_on: date | None = None
+    manual_count_days_old: int | None = None
+    # Set when this component was already proposed against this same count,
+    # which zeroes the order and carries the sentence saying why.
+    already_proposed: str | None = None
     # True where the part number is ours because the supplier publishes none.
     # Such a line is ordered by name; printing the reference as if it were a
     # supplier SKU is how a purchase order ends up quoting an invented number.
@@ -285,6 +324,25 @@ class ComponentPlan:
     @property
     def in_stock_or_coming(self) -> int:
         return self.on_hand + self.on_order + self.in_transit
+
+    @property
+    def counted_by_hand(self) -> bool:
+        return self.manual_count is not None
+
+    def hand_count_in_words(self) -> str | None:
+        """The sentence Zach reads: 4,000, counted 26 Aug (3 weeks ago)."""
+        if self.manual_count is None or self.manual_counted_on is None:
+            return None
+        age = (
+            f" ({age_in_words(self.manual_count_days_old)})"
+            if self.manual_count_days_old is not None
+            else ""
+        )
+        return (
+            f"{in_words(self.manual_count)}, counted "
+            f"{day_and_month(self.manual_counted_on)}{age} — counted by hand, "
+            "not held in Veeqo"
+        )
 
 
 @dataclass(frozen=True)
@@ -322,6 +380,22 @@ class ParkingLotAddition:
 
 
 @dataclass(frozen=True)
+class ManualProposal:
+    """An order Shannon proposed for a hand-counted part, against one count.
+
+    Recorded so the next week can see it. Without it Shannon would find the
+    same shelf count, reach the same conclusion and make the same proposal
+    every Monday until Zach stopped reading the report.
+    """
+
+    key: ComponentKey
+    counted_on: date
+    count: int
+    units: int
+    proposed_on: date
+
+
+@dataclass(frozen=True)
 class GapListEntry:
     key: ComponentKey
     name: str
@@ -342,6 +416,8 @@ class ReplenishmentResult:
     box_plan: BoxPlan | None
     fba_send_targets: dict[str, int]
     suppressed: tuple[SuppressedDemand, ...] = ()
+    # Proposals made this run against a hand count, for the next run to see.
+    manual_proposals: tuple[ManualProposal, ...] = ()
     parking_lot_additions: tuple[ParkingLotAddition, ...] = ()
     warnings: tuple[str, ...] = ()
     notes: tuple[str, ...] = field(default_factory=tuple)
@@ -423,12 +499,19 @@ class ReplenishmentCalculator:
         inbound: dict[str, InboundShipment],
         on_order: dict[str, int],
         historical_velocity: dict[str, SalesVelocity] | None = None,
+        manual_proposals: Mapping[ComponentKey, ManualProposal] | None = None,
+        today: date | None = None,
     ) -> None:
         self.config = config
         self.stock = stock
         self.velocity = velocity
         self.inbound = inbound
         self.on_order = on_order
+        # What Shannon already proposed against each hand count, so she does
+        # not propose it again while the count is unchanged.
+        self.manual_proposals = dict(manual_proposals or {})
+        self.today = today or date.today()
+        self._proposed_now: list[ManualProposal] = []
         # A longer window than the forecast one, used for nothing except
         # saying what a suppressed line used to sell. It never feeds a
         # forecast: a suppressed line is surfaced, never predicted.
@@ -446,6 +529,17 @@ class ReplenishmentCalculator:
 
     def _stock_of(self, sku: str) -> StockPosition:
         return self.stock.get(sku, StockPosition(sku=sku, warehouse_available=0, fba_sellable=0))
+
+    def _on_hand_of(self, key: ComponentKey, component: Component) -> int:
+        """On-hand for one component, from whichever source owns it.
+
+        A hand-counted part is not in Veeqo at all, so Veeqo has nothing to
+        say about it and its silence is not a zero. Reading it from Veeqo is
+        what put eleven components at `on hand 0` in the last run.
+        """
+        if component.counted_by_hand:
+            return component.manual_stock.count if component.manual_stock is not None else 0
+        return self._stock_of(key.part).on_hand
 
     def _velocity_of(self, sku: str) -> SalesVelocity:
         return self.velocity.get(
@@ -504,10 +598,11 @@ class ReplenishmentCalculator:
             return SalesVelocity(
                 sku=key.part, units_sold=0, window_days=self.params.velocity_window_days
             )
-        if component.sales_asin is not None and component.sales_asin in self.velocity:
-            # Unmapped, so the ASIN is all there is. It is a weaker key and
-            # only safe while nothing else claims it.
-            return self.velocity[component.sales_asin]
+        # No ASIN fallback. It used to sit here for unmapped components, and
+        # with live data it is a trap: NAR owns the C-A-T listings, three
+        # colourways share an ASIN, and a join on it would merge them. Where
+        # there is no channel SKU the only remaining key is Zach's own part
+        # number, which is what Veeqo holds his stock under.
         return self._velocity_of(key.part)
 
     def _sales_asins(self, key: ComponentKey, component: Component) -> tuple[str, ...]:
@@ -776,10 +871,11 @@ class ReplenishmentCalculator:
                 continue  # infinite for feasibility, or not part of assembly
             if line.channels is not None:
                 continue  # prep items are consumed at packing, not at assembly
-            available = self._stock_of(line.component.part).on_hand
+            available = self._on_hand_of(line.component, component)
             possible = max(available, 0) // max(line.qty, 1)
+            counted = " (hand count)" if component.counted_by_hand else ""
             note = (
-                f"{component.name} ({line.component}) has {available} on hand, "
+                f"{component.name} ({line.component}) has {available} on hand{counted}, "
                 f"enough for {possible}"
             )
             if buildable is None or possible < buildable:
@@ -869,9 +965,44 @@ class ReplenishmentCalculator:
             box_plan=box_plan,
             fba_send_targets=dict(fba_send_targets),
             suppressed=suppressed,
-            parking_lot_additions=_parking_lot_for(suppressed),
+            manual_proposals=tuple(self._proposed_now),
+            parking_lot_additions=(
+                _parking_lot_for(suppressed) + self._recounts_wanted(components)
+            ),
             warnings=tuple(self.warnings),
         )
+
+    def _recounts_wanted(self, plans: Sequence[ComponentPlan]) -> tuple[ParkingLotAddition, ...]:
+        """Hand counts old enough to need doing again.
+
+        The count is still used — it is the only figure there is, and refusing
+        to use it would put the line back to reading zero. Zach is asked for a
+        fresh one instead, and the age is stated wherever the number appears.
+        """
+        wanted: list[ParkingLotAddition] = []
+        for plan in plans:
+            counted_on = plan.manual_counted_on
+            days = plan.manual_count_days_old
+            if counted_on is None or days is None or days <= MANUAL_COUNT_STALE_AFTER_DAYS:
+                continue
+            wanted.append(
+                ParkingLotAddition(
+                    id=f"AUTO-RECOUNT-{plan.key.part}",
+                    item=f"Recount {plan.name} — the shelf count Shannon is using is old",
+                    detail=(
+                        f"{in_words(plan.manual_count or 0)} counted on "
+                        f"{day_and_month(counted_on)} ({age_in_words(days)}). Shannon is "
+                        "still using it, because it is the only figure there is, but a "
+                        "count that old has probably moved."
+                    ),
+                    blocks=(
+                        "Nothing today. Until it is recounted, every number Shannon prints "
+                        f"for {plan.key.part} rests on a count from "
+                        f"{day_and_month(counted_on)}."
+                    ),
+                )
+            )
+        return tuple(wanted)
 
     # ----------------------------------------------------- demand suppression
 
@@ -1002,27 +1133,52 @@ class ReplenishmentCalculator:
         # holding up an assembly is never described as fine, whatever the
         # rest of the arithmetic says about it.
         if blocks and plan.on_hand <= 0:
+            # If the reason there is nothing to order is that it was already
+            # ordered against this same count, that is the answer to "why is
+            # this not on the list", and it belongs in the same sentence.
+            why = (
+                plan.already_proposed
+                if plan.already_proposed is not None
+                else "nothing to order by the arithmetic"
+            )
             return replace(
                 plan,
                 sufficiency=Sufficiency.BLOCKING_BUILD,
                 sufficiency_reason=(
-                    f"nothing to order by the arithmetic, but stock is {plan.on_hand} and "
+                    f"{why} — stock is {plan.on_hand} and "
                     + ", ".join(blocks)
                     + " cannot be assembled without it"
                 ),
             )
 
+        # Said once per count, not once a week. The sentence carries the date
+        # and the quantity, so "why is this not on the list" is answerable
+        # from the report itself.
+        if plan.already_proposed is not None:
+            still_blocked = (
+                "; " + ", ".join(blocks) + " still cannot be assembled without it"
+                if blocks and plan.on_hand <= 0
+                else ""
+            )
+            return replace(
+                plan,
+                sufficiency=Sufficiency.ALREADY_PROPOSED,
+                sufficiency_reason=plan.already_proposed + still_blocked,
+            )
+
         if plan.component_class is ComponentClass.REORDER_POINT and (
-            plan.reorder_point is None or plan.reorder_target is None
+            plan.reorder_point is None
+            or (plan.reorder_target is None and plan.reorder_quantity is None)
         ):
             return replace(
                 plan,
                 sufficiency=Sufficiency.CANNOT_ASSESS,
                 sufficiency_reason=(
-                    f"cannot be assessed — this is a reorder-point part and no reorder "
-                    f"point is set, so there is no level for {plan.in_stock_or_coming} "
-                    "to be below. Shannon is not saying it is fine; she is saying she "
-                    "has nothing to judge it against"
+                    "cannot be assessed — this is a reorder-point part and either no "
+                    "reorder point is set or nothing says what to buy when it is hit, "
+                    f"so there is no level for {plan.in_stock_or_coming} to be below. "
+                    "Shannon is not saying it is fine; she is saying she has nothing "
+                    "to judge it against"
                 ),
             )
 
@@ -1117,8 +1273,7 @@ class ReplenishmentCalculator:
         horizon = self._cover(component)
         standalone_demand = standalone_weekly * horizon
 
-        position = self._stock_of(key.part)
-        on_hand = position.on_hand
+        on_hand = self._on_hand_of(key, component)
         on_order = self.on_order.get(key.part, 0)
         in_transit = self._inbound_of(key.part)
 
@@ -1146,6 +1301,10 @@ class ReplenishmentCalculator:
         net_units = max(ceil_fraction(raw_net), 0)
         moq_rounded = moq_round(net_units, component)
         order_units = round_up_to(moq_rounded, self.params.round_up_to_nearest)
+
+        manual = component.manual_stock
+        if manual is not None:
+            self._note_the_count(manual, notes)
 
         pack = component.units_per_purchase_unit
         if pack is None:
@@ -1186,6 +1345,10 @@ class ReplenishmentCalculator:
             actual_units=actual_units,
             purchase_unit_name=component.purchase_unit_name,
             routing=self._routing(component, order_units),
+            stock_source=component.stock_source,
+            manual_count=manual.count if manual is not None else None,
+            manual_counted_on=manual.counted_on if manual is not None else None,
+            manual_count_days_old=manual.days_old(self.today) if manual is not None else None,
             notes=tuple(notes),
         )
 
@@ -1202,18 +1365,37 @@ class ReplenishmentCalculator:
         available = on_hand + on_order + in_transit
         point = component.reorder_point
         target = component.reorder_target
-        if point is None or target is None:
+        fixed = component.reorder_quantity
+        if point is None or (target is None and fixed is None):
             notes.append(
-                "No reorder point or target is set yet, so Shannon reports the "
-                "stock level and leaves the decision to you."
+                "No reorder point, or nothing saying what to buy when it is hit, "
+                "so Shannon reports the stock level and leaves the decision to you."
             )
-            top_up = 0
-        elif available < point:
-            top_up = max(target - available, 0)
+            wanted = 0
+        elif available >= point:
+            wanted = 0
+        elif fixed is not None:
+            # "When I get to 200, order 1,000" — a quantity, not a level. It is
+            # raised only where buying it would still leave the part below its
+            # own reorder point, which is not an order anybody meant to place.
+            wanted = max(fixed, point - available)
+            if wanted > fixed:
+                notes.append(
+                    f"The standing order is {in_words(fixed)}, but {available} against a "
+                    f"reorder point of {point} means that would still leave it below the "
+                    f"point, so Shannon has raised this order to {in_words(wanted)}."
+                )
         else:
-            top_up = 0
+            assert target is not None
+            wanted = max(target - available, 0)
 
-        order_units = round_up_to(top_up, self.params.round_up_to_nearest)
+        moq_rounded = moq_round(wanted, component)
+        order_units = round_up_to(moq_rounded, self.params.round_up_to_nearest)
+
+        already = self._already_proposed(key, component, order_units)
+        if already is not None:
+            order_units = 0
+
         pack = component.units_per_purchase_unit
         if pack is None:
             purchase_units: int | None = None
@@ -1232,6 +1414,10 @@ class ReplenishmentCalculator:
                 f"{ceil_fraction(prep_demand)} of these are consumed by this week's FBA prep."
             )
 
+        manual = component.manual_stock
+        if manual is not None:
+            self._note_the_count(manual, notes)
+
         return ComponentPlan(
             key=key,
             name=component.name,
@@ -1245,13 +1431,15 @@ class ReplenishmentCalculator:
             kit_demand=Fraction(0),
             fba_prep_demand=prep_demand,
             safety_stock=Fraction(0),
-            gross_demand=Fraction(target or 0),
+            # What this line is aiming at: a level to reach, or a fixed
+            # quantity to buy. Two different instructions, printed as such.
+            gross_demand=Fraction(target if target is not None else (fixed or 0)),
             on_hand=on_hand,
             on_order=on_order,
             in_transit=in_transit,
-            raw_net=Fraction(top_up),
-            net_units=top_up,
-            moq_rounded=top_up,
+            raw_net=Fraction(wanted),
+            net_units=wanted,
+            moq_rounded=moq_rounded,
             order_units=order_units,
             units_per_purchase_unit=pack,
             purchase_units=purchase_units,
@@ -1260,9 +1448,65 @@ class ReplenishmentCalculator:
             routing=self._routing(component, order_units),
             reorder_point=point,
             reorder_target=target,
+            reorder_quantity=fixed,
             available=available,
+            stock_source=component.stock_source,
+            manual_count=manual.count if manual is not None else None,
+            manual_counted_on=manual.counted_on if manual is not None else None,
+            manual_count_days_old=manual.days_old(self.today) if manual is not None else None,
+            already_proposed=already,
             notes=tuple(notes),
         )
+
+    def _note_the_count(self, manual: ManualStock, notes: list[str]) -> None:
+        notes.append(
+            f"On hand is {in_words(manual.count)} counted by hand on "
+            f"{day_and_month(manual.counted_on)} "
+            f"({age_in_words(manual.days_old(self.today))}). This part is not in Veeqo, "
+            "so Veeqo was not asked about it."
+        )
+        if manual.is_stale(self.today):
+            notes.append(
+                f"That count is {age_in_words(manual.days_old(self.today))} and Shannon is "
+                "still using it — it is the only figure there is — but it needs recounting; "
+                "see the parking lot."
+            )
+
+    def _already_proposed(
+        self, key: ComponentKey, component: Component, order_units: int
+    ) -> str | None:
+        """Has this exact order already been proposed against this same count?
+
+        A hand count does not move on its own. Left alone, Shannon would find
+        the same shelf figure every Monday, reach the same conclusion, and
+        propose the same order until the report stopped being read. So the
+        proposal is made once per count: after that she says she already said
+        it, and asks for the new number instead.
+
+        A run that proposes nothing records nothing, so this never suppresses
+        a line that has just fallen below its point for the first time.
+        """
+        manual = component.manual_stock
+        if manual is None or not component.counted_by_hand or order_units <= 0:
+            return None
+        earlier = self.manual_proposals.get(key)
+        if earlier is not None and earlier.counted_on == manual.counted_on:
+            return (
+                f"Proposed {in_words(earlier.units)} on "
+                f"{day_and_month(earlier.proposed_on)} against this same count of "
+                f"{in_words(manual.count)}. Not repeating it. Tell me the new count "
+                "when they arrive."
+            )
+        self._proposed_now.append(
+            ManualProposal(
+                key=key,
+                counted_on=manual.counted_on,
+                count=manual.count,
+                units=order_units,
+                proposed_on=self.today,
+            )
+        )
+        return None
 
     def _empty_plan(
         self, key: ComponentKey, component: Component, notes: list[str]
@@ -1333,8 +1577,14 @@ __all__ = [
     "ComponentPlan",
     "GapListEntry",
     "KitPlan",
+    "ManualProposal",
+    "ParkingLotAddition",
     "ReplenishmentCalculator",
     "ReplenishmentResult",
+    "Sufficiency",
+    "age_in_words",
+    "day_and_month",
+    "in_words",
     "moq_round",
     "round_up_to",
 ]

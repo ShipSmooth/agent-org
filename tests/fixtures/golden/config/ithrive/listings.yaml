@@ -1,0 +1,58 @@
+# Golden fixture listings — channel identity for the worked example.
+#
+# The join between a component and its sales is Zach's own channel SKU, and
+# only that. Until this file existed the golden run reached the C-A-T's
+# sales through its ASIN, which is exactly the join the C-A-T colour
+# problem proves wrong: North American Rescue owns those ASINs, three
+# colourways share them, and no title states a colour.
+#
+# 30-0001 is listed twice, on the two merchant channels, which is the case
+# that proves a component's velocity is the sum across all of its channel
+# SKUs rather than whichever listing is read first. 300 + 240 = 540, the
+# figure docs/replenishment.md §10 step 2 works through. Both listings are
+# merchant-fulfilled because the worked example sends no loose C-A-Ts to
+# Amazon: §8's allocation is of finished kits.
+
+source_report: golden fixture, not a real export
+extracted: 2026-08-20
+
+kits:
+  IFAK-CAT-BLACK:
+    sales_asin: B0D368FNLH
+    amazon_fba: "IFAK-CAT-BLACK-FBA"
+    amazon_fbm: "IFAK-CAT-BLACK"
+  IFAK-CAT-GREEN:
+    sales_asin: B0D369KJGV
+    amazon_fba: "IFAK-CAT-GREEN-FBA"
+    amazon_fbm: "IFAK-CAT-GREEN"
+  IFAK-CAT-COYOTE:
+    sales_asin: B0FMHNPB4M
+    amazon_fba: "IFAK-CAT-COYOTE-FBA"
+    amazon_fbm: "IFAK-CAT-COYOTE"
+  IFAK-CAT-MULTICAM:
+    sales_asin: B0FMH5BRD6
+    amazon_fba: "IFAK-CAT-MULTICAM-FBA"
+    amazon_fbm: "IFAK-CAT-MULTICAM"
+  IFAK-CAT-COMPACT:
+    sales_asin: B0HD8RN3NS
+    amazon_fba: "IFAK-CAT-COMPACT-FBA"
+    amazon_fbm: "IFAK-CAT-COMPACT"
+  ESSENTIAL-WALL:
+    sales_asin: null
+    amazon_fba: null
+    amazon_fbm: "ESSENTIAL-WALL"
+
+# Standalone components Zach resells, listed under NAR's own ASINs. The
+# ASIN is here to be recognised by a human and is never joined on.
+component_sales_asins:
+  "30-0001": [B00CAT0002]
+  "10-0042": [B01M7O5TJS]
+
+# The colour attribution, in the same shape the live file uses: the channel
+# SKU is the key, and everything else on the row is description.
+cat_gen7_attribution:
+  resolved: 2026-08-20
+  source: golden fixture
+  by_channel_sku:
+    "CAT7-BLACK-FBM": {part: "30-0001", colour: black, asin: B00CAT0002, channel: amazon_fbm, status: active}
+    "CAT7-BLACK-SHOP": {part: "30-0001", colour: black, asin: B00CAT0002, channel: shopify, status: active}

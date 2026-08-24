@@ -1,7 +1,8 @@
 """Shannon's report.
 
-Written to a file and to the database. Not emailed: sending is a Tier 2
-action and this phase has no way to send anything.
+Written to a file and to the database, then emailed to Zach at iThrive.
+The email is the only thing Shannon sends: no supplier hears from her, and
+nothing is staged, ordered or replied to.
 
 Every line shows the whole arithmetic — raw need, after the supplier's
 minimum, after rounding to a multiple of five, in purchase units, and the
@@ -21,6 +22,7 @@ from agent_org.shannon.calculator import (
     ReplenishmentResult,
     Sufficiency,
     format_number,
+    in_words,
 )
 
 RULE = "=" * 78
@@ -31,6 +33,10 @@ _QUIET_SECTIONS: tuple[tuple[Sufficiency, str], ...] = (
     (
         Sufficiency.BLOCKING_BUILD,
         "OUT OF STOCK AND STOPPING A BUILD — nothing to order, but not fine:",
+    ),
+    (
+        Sufficiency.ALREADY_PROPOSED,
+        "Already proposed against the same hand count — not repeated:",
     ),
     (Sufficiency.COVERED, "Covered — stock meets the demand calculated for it:"),
     (Sufficiency.NO_DEMAND, "No demand this period — the arithmetic ran and produced zero:"),
@@ -98,9 +104,10 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
     add(f"Generated {context.generated_at:%A %d %B %Y, %H:%M %Z}")
     add(RULE)
     add("")
-    add("PHASE 1 — READ ONLY. Shannon read the numbers, did the arithmetic and wrote this report.")
-    add("Nothing was ordered, no cart was staged, no email or text was sent, and nothing outside")
-    add("this file was changed. Every quantity below is a recommendation for you.")
+    add("PHASE 2 — READ ONLY, PLUS THIS EMAIL. Shannon read Veeqo and the inbox, did the")
+    add("arithmetic, wrote this report, and emailed it to you. Nothing was ordered, no cart was")
+    add("staged, no supplier heard from her, and no email was replied to or forwarded. Every")
+    add("quantity below is a recommendation for you.")
     add("")
     add(f"BOM version: {result.bom_version}")
     add(context.config_changes)
@@ -126,6 +133,14 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
     for directive in signals.ignored_directives:
         add(f"  Ignored instruction found in an email: {directive}")
     add("")
+
+    hand_counted = [plan for plan in result.components if plan.counted_by_hand]
+    if hand_counted:
+        add("COUNTED BY HAND — not in Veeqo, so Veeqo was not asked")
+        add(THIN)
+        for plan in hand_counted:
+            add(f"  {plan.name} — {plan.hand_count_in_words()}")
+        add("")
 
     add("WHAT TO ORDER")
     add(THIN)
@@ -156,12 +171,21 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
         if overage is not None:
             add(f"      {overage}")
         if plan.component_class is ComponentClass.REORDER_POINT:
-            # Nothing is forecast for these: they are topped back up to a
-            # fixed level whenever they fall below a fixed trigger.
-            add(
-                f"      top up to {_n(plan.gross_demand)} (below the reorder point)"
-                + (f" + FBA prep {_n(plan.fba_prep_demand)}" if plan.fba_prep_demand else "")
-            )
+            # Nothing is forecast for these. Two different instructions live
+            # here and they are printed differently: buy a fixed quantity, or
+            # top up to a level.
+            if plan.reorder_quantity is not None:
+                add(
+                    f"      below the reorder point of {plan.reorder_point} — buy "
+                    f"{in_words(plan.reorder_quantity)} (standing order quantity)"
+                    + (f" + FBA prep {_n(plan.fba_prep_demand)}" if plan.fba_prep_demand else "")
+                )
+            else:
+                add(
+                    f"      top up to {_n(plan.gross_demand)} (below the reorder point "
+                    f"of {plan.reorder_point})"
+                    + (f" + FBA prep {_n(plan.fba_prep_demand)}" if plan.fba_prep_demand else "")
+                )
         else:
             add(
                 f"      demand {_n(plan.gross_demand)} = standalone {_n(plan.standalone_demand)}"
@@ -379,7 +403,7 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
     add(RULE)
     add(
         "Shannon, replenishment agent for "
-        f"{context.entity_name}. Phase 1: she reads and calculates only."
+        f"{context.entity_name}. Phase 2: she reads, calculates, and emails this to you."
     )
     add(RULE)
     return "\n".join(lines) + "\n"

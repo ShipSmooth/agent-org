@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 
 from agent_org.config.errors import Finding, Severity, error, warning
 from agent_org.config.models import (
@@ -61,14 +62,18 @@ class ValidationResult:
         return not self.errors
 
 
-def validate(config: LoadedConfig, extra: Sequence[Finding] | None = None) -> ValidationResult:
+def validate(
+    config: LoadedConfig,
+    extra: Sequence[Finding] | None = None,
+    today: date | None = None,
+) -> ValidationResult:
     findings: list[Finding] = list(extra or [])
     boms = config.boms
     entity = config.entity
     channel_keys = set(entity.channel_keys)
 
     findings += _check_suppliers(config)
-    findings += _check_components(config)
+    findings += _check_components(config, today or date.today())
     findings += _check_listings(config, channel_keys)
     findings += _check_kits(config, channel_keys)
     findings += _check_fba_prep(config)
@@ -105,7 +110,7 @@ def _check_suppliers(config: LoadedConfig) -> list[Finding]:
     return findings
 
 
-def _check_components(config: LoadedConfig) -> list[Finding]:
+def _check_components(config: LoadedConfig, today: date) -> list[Finding]:
     findings: list[Finding] = []
     boms = config.boms
     # FBA packaging is consumed by a prep rule rather than by a kit line, so
@@ -143,6 +148,7 @@ def _check_components(config: LoadedConfig) -> list[Finding]:
                         blocks_run=False,
                     )
                 )
+        findings += _check_stock_source(key, component, today)
         if component.component_class is ComponentClass.REORDER_POINT:
             findings += _check_reorder_thresholds(component.key, component)
         if component.component_class in PURCHASABLE_CLASSES:
@@ -278,17 +284,95 @@ def _check_listings(config: LoadedConfig, channel_keys: set[str]) -> list[Findin
     return findings
 
 
-def _check_reorder_thresholds(key: ComponentKey, component: Component) -> list[Finding]:
+def _check_stock_source(key: ComponentKey, component: Component, today: date) -> list[Finding]:
+    """A hand-counted component must actually carry a hand count.
+
+    Without this, `stock_source: manual` means "do not ask Veeqo" and nothing
+    else, so the component reads zero every week and Shannon proposes buying
+    it every week forever. That is the exact failure this field exists to
+    prevent, so it is an error and it blocks the run.
+    """
     findings: list[Finding] = []
-    if component.reorder_point is None or component.reorder_target is None:
+    if not component.counted_by_hand:
+        if component.manual_stock is not None:
+            findings.append(
+                warning(
+                    f"Component {key} carries a hand count but takes its stock from Veeqo, "
+                    "so the count is never read.",
+                    component.manual_stock.loc,
+                    fix="Add 'stock_source: manual', or delete the 'manual_stock' block.",
+                )
+            )
+        return findings
+    if component.manual_stock is None:
         findings.append(
-            warning(
-                f"Component {key} is a reorder-point item but its reorder point or target "
-                "is still unresolved, so Shannon cannot say when it runs low.",
+            error(
+                f"Component {key} says its stock is counted by hand but gives no count, "
+                "so Shannon would read it as zero and propose buying it every week.",
                 component.loc,
-                fix="Fill in 'reorder_point' and 'reorder_target' with numbers.",
+                fix=(
+                    "Add 'manual_stock:' with 'count:' and 'counted_on:', or set "
+                    "'stock_source: veeqo'."
+                ),
             )
         )
+        return findings
+    if component.manual_stock.counted_on > today:
+        findings.append(
+            error(
+                f"Component {key} was counted on "
+                f"{component.manual_stock.counted_on.isoformat()}, which has not happened "
+                "yet.",
+                component.manual_stock.loc,
+                fix="Correct 'counted_on' to the day the shelf was actually counted.",
+            )
+        )
+    return findings
+
+
+def _check_reorder_thresholds(key: ComponentKey, component: Component) -> list[Finding]:
+    findings: list[Finding] = []
+    if component.reorder_target is not None and component.reorder_quantity is not None:
+        findings.append(
+            error(
+                f"Component {key} sets both 'reorder_target' "
+                f"({component.reorder_target}) and 'reorder_quantity' "
+                f"({component.reorder_quantity}). Those are two different instructions \u2014 "
+                "top up to a level, or buy a fixed amount \u2014 and Shannon will not pick "
+                "one for you.",
+                component.loc,
+                fix="Delete whichever one is not what Zach meant.",
+            )
+        )
+        return findings
+    if component.reorder_point is None or (
+        component.reorder_target is None and component.reorder_quantity is None
+    ):
+        findings.append(
+            warning(
+                f"Component {key} is a reorder-point item but its reorder point, or what "
+                "to buy when it is hit, is still unresolved, so Shannon cannot say when "
+                "it runs low.",
+                component.loc,
+                fix=(
+                    "Fill in 'reorder_point', and either 'reorder_quantity' (buy this "
+                    "many) or 'reorder_target' (top up to this level)."
+                ),
+            )
+        )
+        return findings
+    if component.reorder_quantity is not None:
+        if component.reorder_quantity < 1:
+            findings.append(
+                error(
+                    f"Component {key} has a reorder quantity of "
+                    f"{component.reorder_quantity}, which would order nothing.",
+                    component.loc,
+                    fix="Write the number of sellable units to buy, for example 1000.",
+                )
+            )
+        return findings
+    if component.reorder_target is None:
         return findings
     if component.reorder_point > component.reorder_target:
         findings.append(
@@ -507,6 +591,69 @@ def _check_recipients(config: LoadedConfig) -> list[Finding]:
                 fix="Add 'identity:' with a 'from_address:' for this business.",
             )
         )
+    findings += _check_report_recipients(config)
+    return findings
+
+
+def _check_report_recipients(config: LoadedConfig) -> list[Finding]:
+    """Who the weekly report is emailed to, and that it stays inside the business.
+
+    Zach holds one email identity per company, and they are not
+    interchangeable: the vendor/tooling identity receiving iThrive's
+    operational mail mixes correspondence between two LLCs. The rule is
+    stated generally rather than as a list of banned addresses — mail goes
+    to the operating domain Shannon sends from, and anything else is named
+    and refused here rather than discovered in a sent-items folder.
+    """
+    findings: list[Finding] = []
+    shannon = config.shannon
+    where = Loc(file=config.entity.shannon_config, line=1)
+    if not shannon.report_email_roles:
+        findings.append(
+            warning(
+                "No role is listed under 'reports: email_to:', so the weekly report is "
+                "written to disk and to the database but emailed to nobody.",
+                where,
+                fix="Add 'reports:' with 'email_to: [zach]'.",
+            )
+        )
+    _, _, home_domain = shannon.from_address.partition("@")
+    for role in shannon.report_email_roles:
+        recipient = shannon.recipients.get(role)
+        if recipient is None:
+            findings.append(
+                error(
+                    f"The weekly report is addressed to '{role}', but no such person is "
+                    "listed under 'recipients:', so the report would be emailed nowhere.",
+                    where,
+                    fix=f"Add '{role}:' with an email address under 'recipients:'.",
+                )
+            )
+            continue
+        if not recipient.email:
+            findings.append(
+                error(
+                    f"'{role}' receives the weekly report but has no email address.",
+                    recipient.loc,
+                    fix="Add 'email:' for this person, or take the role out of "
+                    "'reports: email_to:'.",
+                )
+            )
+            continue
+        _, _, domain = recipient.email.partition("@")
+        if home_domain and domain.lower() != home_domain.lower():
+            findings.append(
+                error(
+                    f"'{role}' would receive {config.entity.legal_name}'s weekly report at "
+                    f"{recipient.email}, which is not on {home_domain} — the domain Shannon "
+                    "sends this entity's mail from. Each business has its own address, and "
+                    "operational mail crossing between them mixes the correspondence of two "
+                    "separate companies.",
+                    recipient.loc,
+                    fix=f"Use this person's {home_domain} address, or take the role out of "
+                    "'reports: email_to:'.",
+                )
+            )
     return findings
 
 

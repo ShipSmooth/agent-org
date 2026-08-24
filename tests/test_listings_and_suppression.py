@@ -49,7 +49,9 @@ def config() -> LoadedConfig:
 
 
 def _sales(sku: str, units: int, window: int = WINDOW) -> SalesVelocity:
-    return SalesVelocity(sku=sku, units_sold=units, window_days=window, by_channel={"fba": units})
+    return SalesVelocity(
+        sku=sku, units_sold=units, window_days=window, by_channel={"amazon_fba": units}
+    )
 
 
 def _run(
@@ -74,7 +76,7 @@ def test_a_listing_status_is_read_as_data_not_as_a_comment(config: LoadedConfig)
     """A plain SKU is live, a {sku, status} block says which, null is none."""
     live = config.listings.for_kit("25-001")
     assert live is not None
-    assert live.sku_for("fba") == "GK-VQI5-LWIS"
+    assert live.sku_for("amazon_fba") == "GK-VQI5-LWIS"
     assert all(listing.status == ACTIVE for listing in live.listings)
 
     down = config.listings.for_kit("25-010")
@@ -88,7 +90,7 @@ def test_a_listing_status_is_read_as_data_not_as_a_comment(config: LoadedConfig)
 
     compact = config.listings.for_kit("IFAK-CAT-COMPACT")
     assert compact is not None
-    assert compact.sku_for("fba") is None  # null: no listing on that channel
+    assert compact.sku_for("amazon_fba") is None  # null: no listing on that channel
 
 
 def test_a_kit_that_has_never_been_on_amazon_is_not_suppressed(config: LoadedConfig) -> None:
@@ -372,7 +374,7 @@ def test_the_report_prints_the_product_name_for_an_internal_reference(
 
 
 def test_no_kit_still_carries_a_placeholder_amazon_sku(config: LoadedConfig) -> None:
-    """boms.yaml used to carry `fba: TODO` on every kit. listings.yaml answers
+    """boms.yaml used to carry `amazon_fba: TODO` on every kit. listings.yaml answers
     that question now, so the placeholders were removed rather than copied:
     two files holding the same fact is how they come to disagree."""
     for kit_group, kit in config.boms.kits.items():
@@ -385,16 +387,16 @@ def test_no_kit_still_carries_a_placeholder_amazon_sku(config: LoadedConfig) -> 
 
 
 def test_listings_yaml_answers_for_amazon_and_for_nothing_else(config: LoadedConfig) -> None:
-    """It covers `fba` and `fbm` for every kit, including the ones it says have
+    """It covers `amazon_fba` and `amazon_fbm` for every kit, including the ones it says have
     no listing. It says nothing about Shopify, so a missing Shopify SKU is
     still a gap and is still reported as one."""
     warnings = [item.message for item in validate(config).warnings]
-    assert not [text for text in warnings if "no SKU for the 'fba' channel" in text]
+    assert not [text for text in warnings if "no SKU for the 'amazon_fba' channel" in text]
     assert [text for text in warnings if "IFAK-CAT-COMPACT" in text and "shopify" in text]
 
     never_listed = config.listings.for_kit("20-314")
     assert never_listed is not None
-    assert never_listed.covers("fba") and never_listed.covers("fbm")
+    assert never_listed.covers("amazon_fba") and never_listed.covers("amazon_fbm")
     assert not never_listed.covers("shopify")
 
 

@@ -30,6 +30,9 @@ from agent_org.shannon.report import pack_overage_line
 
 DATA = Path(__file__).parent / "fixtures" / "golden" / "data"
 WHEN = datetime(2026, 3, 30, 6, 0, tzinfo=UTC)
+# A Monday three weeks after the shelves behind the eleven hand-counted
+# components were counted, which is what the live parts list now carries.
+AFTER_THE_COUNT = datetime(2026, 9, 14, 6, 0, tzinfo=UTC)
 
 
 def _pack_plan(order_units: int, pack: int) -> ComponentPlan:
@@ -90,7 +93,12 @@ def live_config_report(
     tmp_path: Path,
 ) -> str:
     """The same run, but against config/ithrive — the file Zach actually
-    edits — with sample saved exports standing in for the live accounts."""
+    edits — with sample saved exports standing in for the live accounts.
+
+    Dated after 26 August, the day the eleven hand-counted shelves were
+    counted: a run cannot be asked to believe a count taken in its own
+    future, and this is the live parts list, counts and all.
+    """
     config, _ = load_config(Path(__file__).resolve().parents[1] / "config", "ithrive")
     with entity_session(app_conn, entity_id) as conn:
         summary = run_replenishment(
@@ -98,7 +106,7 @@ def live_config_report(
             config=config,
             fixtures=Path(__file__).parent / "fixtures" / "ithrive-sample",
             output_dir=tmp_path,
-            now=datetime(2026, 5, 4, 6, 0, tzinfo=UTC),
+            now=AFTER_THE_COUNT,
         )
     assert summary.error is None, summary.error
     assert summary.report_path is not None
@@ -106,8 +114,8 @@ def live_config_report(
 
 
 def test_the_live_configuration_produces_a_report(live_config_report: str) -> None:
-    assert "BOM version: 2026-08-25" in live_config_report
-    assert "PHASE 1 — READ ONLY" in live_config_report
+    assert "BOM version: 2026-08-26" in live_config_report
+    assert "PHASE 2 — READ ONLY, PLUS THIS EMAIL" in live_config_report
     # Twelve kits, including the new wall-mounted Express kit.
     assert "25-002" in live_config_report
 
@@ -171,8 +179,12 @@ def test_the_run_writes_a_report_file(report: str) -> None:
 
 
 def test_the_report_says_plainly_that_nothing_happened(report: str) -> None:
-    assert "PHASE 1 — READ ONLY" in report
-    assert "Nothing was ordered, no cart was staged, no email or text was sent" in report
+    """The one thing that changed in this phase is named, and the list of
+    things that did not is still there in full."""
+    assert "PHASE 2 — READ ONLY, PLUS THIS EMAIL" in report
+    assert "emailed it to you" in report
+    assert "Nothing was ordered, no cart was" in report
+    assert "staged, no supplier heard from her, and no email was replied to or forwarded" in report
 
 
 def test_every_ordered_line_shows_its_whole_arithmetic(report: str) -> None:
@@ -301,7 +313,12 @@ def test_the_command_line_run_writes_a_report_a_person_can_open(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`shannon run` — the manual trigger, which is the Phase 1 path that matters."""
+    """`shannon run` — the manual trigger, which is the path that matters.
+
+    Run with `--no-email` so that the report itself is what is under test;
+    the Monday email has its own tests, including what happens when the
+    mail server refuses it.
+    """
     monkeypatch.setenv("DATABASE_URL", app_dsn)
     monkeypatch.setenv("DATABASE_MIGRATOR_URL", migrator_dsn)
     config_root = Path(__file__).parent / "fixtures" / "golden" / "config"
@@ -315,11 +332,12 @@ def test_the_command_line_run_writes_a_report_a_person_can_open(
             str(DATA),
             "--output",
             str(tmp_path),
+            "--no-email",
         ]
     )
     out = capsys.readouterr().out
     assert code == 0, out
-    assert "Nothing was ordered and nothing was sent." in out
+    assert "no cart was staged and no supplier was contacted" in out
     written = list(tmp_path.glob("*.txt")) + list(tmp_path.glob("*.md"))
     assert written, out
     assert "SHANNON" in written[0].read_text(encoding="utf-8")
@@ -334,6 +352,7 @@ def test_the_command_line_run_writes_a_report_a_person_can_open(
             str(DATA),
             "--output",
             str(tmp_path),
+            "--no-email",
         ]
     )
     again = capsys.readouterr().out
@@ -352,6 +371,7 @@ def test_the_command_line_run_writes_a_report_a_person_can_open(
             str(DATA),
             "--output",
             str(tmp_path),
+            "--no-email",
             "--again",
         ]
     )

@@ -10,6 +10,7 @@ mistake left in a production file.
 from __future__ import annotations
 
 import shutil
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -23,11 +24,17 @@ REPO = Path(__file__).resolve().parents[1]
 REAL_CONFIG = REPO / "config"
 GOLDEN_CONFIG = Path(__file__).parent / "fixtures" / "golden" / "config"
 INVALID_CONFIG = Path(__file__).parent / "fixtures" / "invalid" / "config"
+# The day the shelves behind the eleven hand-counted components were
+# counted, which is the day `bom_version` names. Validation is told the
+# date rather than reading the clock, so "that count is dated in the
+# future" is a fact about the configuration and not about when the suite
+# happens to run.
+COUNT_DAY = date(2026, 8, 26)
 
 
 def _findings(root: Path) -> list[str]:
     config, findings = load_config(root, "ithrive")
-    result = validate(config, findings)
+    result = validate(config, findings, today=COUNT_DAY)
     return [finding.render() for finding in result.findings]
 
 
@@ -43,7 +50,7 @@ def invalid_findings() -> list[str]:
 
 def test_the_live_config_has_no_errors() -> None:
     config, findings = load_config(REAL_CONFIG, "ithrive")
-    result = validate(config, findings)
+    result = validate(config, findings, today=COUNT_DAY)
     assert not result.errors, [finding.render() for finding in result.errors]
 
 
@@ -194,11 +201,13 @@ def test_the_golden_config_is_clean() -> None:
 def test_validate_config_command_passes_on_the_live_config(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    code = main(["--config-root", str(REAL_CONFIG), "validate-config"])
+    code = main(
+        ["--config-root", str(REAL_CONFIG), "validate-config", "--as-of", COUNT_DAY.isoformat()]
+    )
     out = capsys.readouterr().out
     assert code == 0, out
     assert "No problems" in out
-    assert "2026-08-25" in out
+    assert "2026-08-26" in out
     assert "Traceback" not in out
 
 

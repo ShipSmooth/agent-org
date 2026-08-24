@@ -8,6 +8,7 @@ dictionaries, so a missing field is a load-time failure rather than a
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from enum import Enum
 from fractions import Fraction
 
@@ -62,6 +63,38 @@ class Supplier:
         return capability in self.capabilities
 
 
+# How Shannon learns what is on the shelf.
+STOCK_SOURCE_VEEQO = "veeqo"
+STOCK_SOURCE_MANUAL = "manual"
+STOCK_SOURCES = (STOCK_SOURCE_VEEQO, STOCK_SOURCE_MANUAL)
+
+# A count Zach made by hand goes stale. It stays usable — an eight-week-old
+# count of 4,000 blue dot labels is still far better evidence than nothing —
+# but Shannon asks for a fresh one.
+MANUAL_COUNT_STALE_AFTER_DAYS = 56
+
+
+@dataclass(frozen=True)
+class ManualStock:
+    """A shelf count Zach made on a given day.
+
+    Some components are not in Veeqo at all: Zach buys blue dot labels by the
+    thousand and keeps them in a drawer. Veeqo's silence about them is not a
+    zero, and the number that decides whether to spend money must not live in
+    a free-text note where nothing can read it.
+    """
+
+    count: int
+    counted_on: date
+    loc: Loc
+
+    def days_old(self, today: date) -> int:
+        return (today - self.counted_on).days
+
+    def is_stale(self, today: date) -> bool:
+        return self.days_old(today) > MANUAL_COUNT_STALE_AFTER_DAYS
+
+
 @dataclass(frozen=True)
 class Component:
     key: ComponentKey
@@ -72,7 +105,16 @@ class Component:
     moq_min: int
     moq_increment: int
     reorder_point: int | None
+    # Top up *to* this level. Mutually exclusive with reorder_quantity.
     reorder_target: int | None
+    # Buy exactly this many, whatever the level — "when I get to 200, order
+    # 1,000". Raised only when that would still leave stock below the reorder
+    # point. Mutually exclusive with reorder_target.
+    reorder_quantity: int | None
+    # 'veeqo' (the default) or 'manual'. A manual component's on-hand comes
+    # from manual_stock and Veeqo is never consulted for it.
+    stock_source: str
+    manual_stock: ManualStock | None
     purchase_asin: str | None
     # The listing Zach sells this component on. Descriptive only: sales join
     # on the channel SKU, which Zach controls (docs/replenishment.md §5).
@@ -97,6 +139,10 @@ class Component:
     def order_by(self) -> str:
         """What goes on a purchase order: a real part number, or the name."""
         return self.name if self.part_is_internal_reference else self.key.part
+
+    @property
+    def counted_by_hand(self) -> bool:
+        return self.stock_source == STOCK_SOURCE_MANUAL
 
 
 def cover_target_for(
@@ -219,14 +265,32 @@ class ShannonConfig:
     parameters: Parameters
     ops_reminder_cadence_weeks: int
     ops_reminder_groups: tuple[OpsReminderGroup, ...]
+    # Who the weekly report is emailed to, by role name. No address appears
+    # in code: roles resolve here, per entity, so a second recipient or a
+    # second business is a config edit.
+    report_email_roles: tuple[str, ...] = ()
+
+    def report_email_addresses(self) -> tuple[str, ...]:
+        """The addresses the report goes to, in role order."""
+        found: list[str] = []
+        for role in self.report_email_roles:
+            recipient = self.recipients.get(role)
+            if recipient is not None and recipient.email:
+                found.append(recipient.email)
+        return tuple(found)
 
 
 @dataclass(frozen=True)
 class Channel:
     name: str
-    key: str  # short name used in boms.yaml aliases and `channels:` filters
+    key: str  # short name used in listings.yaml and `channels:` filters
     fulfillment: str  # fba | merchant | wfs
     has_history: bool
+    # The name Veeqo puts on an order for this channel, spelled exactly as
+    # Veeqo spells it. Live velocity is split by channel on this, and a
+    # channel Veeqo reports which is not named here stops the run rather
+    # than being guessed at: the guess would move stock to Amazon.
+    veeqo_channel: str | None = None
 
 
 @dataclass(frozen=True)
@@ -276,6 +340,11 @@ class PolicyConfig:
     rules: dict[str, PolicyRule]
     thresholds: dict[str, object]
     escalations: tuple[dict[str, object], ...] = field(default_factory=tuple)
+    # Actions that cannot be undone and are accepted at their stated tier
+    # anyway, named one by one in policy rather than judged in code. The
+    # rule this excuses — irreversible means Tier 3 — is the right default
+    # and stays in force for everything not listed here.
+    accepted_irreversible: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

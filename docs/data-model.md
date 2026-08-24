@@ -71,6 +71,12 @@ CREATE TABLE components (
     reorder_target INT,
     cover_target_weeks  NUMERIC(4,1),            -- NULL = entity default
     safety_stock_weeks  NUMERIC(4,1),
+    resale_only    BOOLEAN NOT NULL DEFAULT FALSE,
+                   -- TRUE for a finished product bought complete and resold
+                   -- as it comes (the 42 NAR kits and standalone lines).
+                   -- Forecast from its own sales; never inside a kit, and
+                   -- belonging to no kit is normal rather than a gap
+                   -- (docs/replenishment.md §2.1.2).
     part_is_internal_reference BOOLEAN NOT NULL DEFAULT FALSE,
                    -- TRUE where the supplier publishes no item numbers, so
                    -- supplier_part_no above is OURS and means nothing to them

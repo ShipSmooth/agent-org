@@ -13,23 +13,40 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from fractions import Fraction
 
-from agent_org.config.models import ComponentClass, LoadedConfig
+from agent_org.config.models import ComponentClass, LoadedConfig, ParkingLotItem
 from agent_org.integrations.reads import OrderSignals
-from agent_org.shannon.calculator import ComponentPlan, ReplenishmentResult
+from agent_org.shannon.calculator import (
+    ComponentPlan,
+    ReplenishmentResult,
+    Sufficiency,
+    format_number,
+)
 
 RULE = "=" * 78
 THIN = "-" * 78
 
 
-def _n(value: Fraction | int) -> str:
-    """Print an exact number: 245 rather than 245.0, 34.29 when it is not whole."""
-    if isinstance(value, int):
-        return str(value)
-    if value.denominator == 1:
-        return str(value.numerator)
-    return f"{float(value):.2f}"
+_QUIET_SECTIONS: tuple[tuple[Sufficiency, str], ...] = (
+    (
+        Sufficiency.BLOCKING_BUILD,
+        "OUT OF STOCK AND STOPPING A BUILD — nothing to order, but not fine:",
+    ),
+    (Sufficiency.COVERED, "Covered — stock meets the demand calculated for it:"),
+    (Sufficiency.NO_DEMAND, "No demand this period — the arithmetic ran and produced zero:"),
+    (Sufficiency.CANNOT_ASSESS, "Cannot be assessed — nothing to judge the stock against:"),
+)
+
+
+def _parking_lot_order(item: ParkingLotItem) -> tuple[int, str]:
+    """PL-2 before PL-10: sort on the number, not on the text."""
+    _, _, tail = item.id.partition("-")
+    return (int(tail), item.id) if tail.isdigit() else (10**6, item.id)
+
+
+# The calculator words some of its own sentences, so both sides print a
+# number the same way: 245 rather than 245.0, 34.29 when it is not whole.
+_n = format_number
 
 
 def _heading(plan: ComponentPlan) -> str:
@@ -169,11 +186,27 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
 
     add("NOTHING TO ORDER THIS WEEK")
     add(THIN)
-    for plan in result.components:
-        if plan.order_units > 0 or plan.component_class is ComponentClass.NON_STOCKED:
+    quiet = [
+        plan
+        for plan in result.components
+        if plan.order_units <= 0 and plan.component_class is not ComponentClass.NON_STOCKED
+    ]
+    # Split by WHY a line needs nothing. One word for all four states was
+    # how a part with nothing on hand, and a build waiting on it, came to be
+    # printed as "covered" three lines above being called urgent.
+    for state, heading in _QUIET_SECTIONS:
+        group = [plan for plan in quiet if plan.sufficiency is state]
+        if not group:
             continue
-        add(f"{_heading(plan)}: covered — on hand {plan.on_hand}, on order {plan.on_order}")
-    add("")
+        add(f"  {heading}")
+        for plan in group:
+            add(f"{_heading(plan)}")
+            add(f"      {plan.sufficiency_reason}.")
+            add(f"      on hand {plan.on_hand}, on order {plan.on_order}")
+        add("")
+    if not quiet:
+        add("  Every line in the parts list needs something ordered.")
+        add("")
 
     # Stated, never omitted: a missing line and a zero line read the same on
     # paper, and only one of them proves the class did its job.
@@ -305,7 +338,13 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
 
     add("PARKING LOT — open questions, carried until you clear them")
     add(THIN)
-    for item in config.boms.parking_lot:
+    live = sorted(
+        (item for item in config.boms.parking_lot if not item.resolved), key=_parking_lot_order
+    )
+    closed = sorted(
+        (item for item in config.boms.parking_lot if item.resolved), key=_parking_lot_order
+    )
+    for item in live:
         add(f"  {item.id}  {item.item}")
         if item.blocks:
             add(f"        blocks: {item.blocks}")
@@ -315,6 +354,13 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
         add(f"  {addition.id}  {addition.item}")
         add(f"        {addition.detail}")
         add(f"        blocks: {addition.blocks}")
+    if not live and not result.parking_lot_additions:
+        add("  Nothing open.")
+    if closed:
+        add("")
+        add("  Closed — settled, kept for the record, nothing for you to do:")
+        for item in closed:
+            add(f"    {item.id}  {item.item}")
     add("")
     add(RULE)
     add(

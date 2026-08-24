@@ -106,7 +106,7 @@ def live_config_report(
 
 
 def test_the_live_configuration_produces_a_report(live_config_report: str) -> None:
-    assert "BOM version: 2026-08-24" in live_config_report
+    assert "BOM version: 2026-08-25" in live_config_report
     assert "PHASE 1 — READ ONLY" in live_config_report
     # Twelve kits, including the new wall-mounted Express kit.
     assert "25-002" in live_config_report

@@ -1,6 +1,7 @@
 # config/ithrive/boms.yaml
 #
-# Bill of materials for the seven HMZ kits assembled in-house by iThrive Medical.
+# Bill of materials for the twelve HMZ kits assembled in-house by iThrive Medical,
+# and for the NAR products resold as they come.
 # Source of truth for BOM explosion. Veeqo cannot hold this (no FBA bundle support),
 # so it lives here, version-controlled, and Veeqo FBM bundles are a cross-check only.
 #
@@ -9,7 +10,7 @@
 #
 # Identity of every component is (supplier, part). Never a bare part number.
 
-bom_version: 2026-08-24
+bom_version: 2026-08-25
 
 # ---------------------------------------------------------------------------
 # SUPPLIERS — capability decides how a line can be acquired, never hardcoded
@@ -80,7 +81,7 @@ suppliers:
     notes: >
       Two printers, two card versions confirmed: Next Day Flyers prints the
       Essential and Express card; 48HourPrint prints the 26-001 Red Bag card.
-      A third version exists but is not yet mapped to a kit — see PL-4.
+      Four cards in total, all mapped to kits (PL-4, closed 21 Aug 2026).
 
   internal:
     name: Held loose, no current reorder path
@@ -131,6 +132,7 @@ components:
      class: forecast, units_per_purchase_unit: 1, moq_min: 400, moq_increment: 200}
   - {supplier: nar, part: "30-0033", name: "C-A-T Tourniquet Gen 7, Blue (TRAINING)",
      class: forecast, units_per_purchase_unit: 1, moq_min: 400, moq_increment: 200,
+     resale_only: true,
      note: "Resold standalone only — in NO kit, so it never appears in a BOM explosion. Added 24 Aug 2026 once the C-A-T channel-SKU mapping revealed a third colour. MOQ 400/200 is ASSUMED from the live colourways and is unconfirmed for a training unit — see PL-9."}
   - {supplier: nar, part: "10-0042", name: "HyFin Vent Compact Chest Seal, Twin Pack",
      class: forecast, units_per_purchase_unit: 1, moq_min: 750, moq_increment: 150,
@@ -153,6 +155,145 @@ components:
       370 airways is 185 purchase units. ~500 loose units currently on hand.
       Archived in Zach's Shopify — he buys it, he does not resell it, so it has a
       purchase side and no sales side.
+
+  # ---- NAR products resold standalone, in NO kit --------------------------
+  # Added 24 Aug 2026. The first live report warned that 42 listings were for
+  # products the BOM did not describe: Shannon could read their sales and could
+  # never reorder them. These are NAR finished kits and NAR components Zach
+  # resells as-is — product type "NAR finished kit": forecast directly, no BOM
+  # explosion, never a component of anything.
+  #
+  # MOQ is left unset because NAR's terms are only known for the C-A-T (400/200)
+  # and HyFin chest seals (750/150). Anything ordered here rounds to the nearest 5
+  # and no further. If NAR imposes a minimum on any of these, correct it in place.
+  # `status` records whether the listing was live in the 24 Aug All Listings Report;
+  # an inactive one is demand-suppressed, not dead.
+  - {supplier: nar, part: "10-0015", name: "HyFin Chest Seal Occlusive (Single Pack)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "10-0032", name: "HyFin Chest Seal Trainer (Twin Pack)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "10-0037", name: "HyFin Vent Chest Seal (Twin Pack)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "20-0040", name: "T2 Tactical Triage Kit for Disasters",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0009", name: "BOA Constricting IV Bands (Standard)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0012", name: "Abdominal Stump Emergency Trauma Dressing ETD",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0031", name: "Emergency Trauma Dressing ETD (4 Inch)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0032", name: "Emergency Trauma Dressing ETD (6 Inch)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0044", name: "C-A-T Tourniquet Holder (Coyote)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0053", name: "C-A-T Tourniquet Holder (OD Green)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0057", name: "C-A-T Tourniquet Holder (Black)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0071", name: "BOA Constricting IV Bands (XL)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0093", name: "Flat ETD Emergency Trauma Dressing (4 Inch)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0094", name: "Flat Emergency Trauma Dressing ETD (6 Inch)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "30-0128", name: "C-A-T Tourniquet Holder (Red)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "50-1005", name: "SAM Splint II",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "60-0080", name: "Elite Red Responder Litter",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "70-0005", name: "Retractable Scissor Leash with Clip (Black)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "80-0167", name: "Individual Patrol Officer Kit IPOK (Gauze)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-0299", name: "Range Trauma Kit (Orange)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-0439", name: "K-9 Handler IFAK Kit (Black)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-0494", name: "M-FAK Mini First Aid Kit (Black)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "80-0542", name: "Patrol Vehicle Trauma Kit",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-0573", name: "Public Access Bleeding Control Kit (6 Pack)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "80-0901", name: "Public Access Individual Bleeding Control Blue Trainer Kit",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1030", name: "M-FAK Resupply Kit",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1049", name: "ROO M-FAK First Aid Kit (Black)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1050", name: "ROO M-FAK First Aid Kit (Coyote)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1051", name: "ROO M-FAK Kit (OD Green)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1067", name: "K-9 Handler ROO M-FAK First Aid Kit (Black)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1104", name: "Individual Throw Kit (Basic)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1490", name: "Eagle IFAK Kit (Multicam)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1612", name: "Car Door Panel First Aid Kit",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1667", name: "M-FAK LCL Mini First Aid Kit",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1703", name: "ROO Mini First Aid Kit M-FAK LCL (Black)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "85-0008", name: "T.O.R.K. Tactical Operator Response Kit (Black)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "85-0177", name: "Eagle IFAK Kit (Black)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "85-0178", name: "Eagle IFAK Kit (Coyote)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "85-0180", name: "Eagle IFAK Kit (OD Green)",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "85-0404", name: "Individual Aid Kit",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "85-0417", name: "SRO Crisis Response Kit",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "85-0834", name: "Compact Officer Response Emergency Core Kit",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
 
   # ---- SAM ----------------------------------------------------------------
   - {supplier: sam_medical, part: "XT600-OR-EN", name: "SAM XT Tourniquet, Metal Windlass, Orange",
@@ -328,7 +469,7 @@ components:
       supply for build feasibility. Never enters a cart, PO or recommendation.
 
 # ---------------------------------------------------------------------------
-# KITS — 7 kits, 60 BOM lines
+# KITS — 12 kits, 135 BOM lines
 # ---------------------------------------------------------------------------
 #
 # `aliases` are the SKUs VEEQO counts stock under, one per channel. They are NOT
@@ -546,9 +687,12 @@ parking_lot:
       IFAK-CAT-COYOTE and IFAK-CAT-MULTICAM cannot be built — pouch stock is zero.
       This is the most time-sensitive item on the list.
 
-  # PL-4 RESOLVED — kept below for the record
+  # PL-4 RESOLVED — 'resolved: true' moves it out of the live list on the report
+  # and into the closed section at the end. The parking lot is what Zach still
+  # has to deal with; a settled question sitting in it is noise.
   - id: PL-4
-    item: "Instruction-card mapping (resolved)"
+    resolved: true
+    item: "Instruction-card mapping"
     detail: >
       RESOLVED 21 Aug 2026. Four distinct cards, not three:
       CARD-ESSENTIAL-EXPRESS (Next Day Flyers) — 20-314, 20-315, 25-001, 25-002;
@@ -557,7 +701,6 @@ parking_lot:
       CARD-BASIC-SAMXT (Next Day Flyers) — 26-002.
       Three of the four come from Next Day Flyers, one from 48HourPrint; both
       quote ~10 business days.
-    blocks: "Nothing — retained for the record"
 
   - id: PL-9
     item: "NAR terms for the blue TRAINING C-A-T 30-0033 — 400 minimum / 200 step?"
@@ -573,13 +716,13 @@ parking_lot:
       larger than it needed to be — the error is in the safe direction, but it is
       real money. Ask NAR, then correct moq_min / moq_increment here.
 
-  # PL-8 RESOLVED — kept below for the record
+  # PL-8 RESOLVED — see the note on PL-4 above
   - id: PL-8
-    item: "Amazon channel SKUs and sales ASINs (resolved)"
+    resolved: true
+    item: "Amazon channel SKUs and sales ASINs"
     detail: >
       RESOLVED 24 Aug 2026 by config/ithrive/listings.yaml. Velocity now joins on
       Amazon's own channel SKUs, summed across every SKU mapped to a component;
       the sales ASIN is description only, because three C-A-T colourways share
       ASINs that NAR owns and controls. 20-314, 20-315 and 25-002 have no Amazon
       listing at all, which is a fact rather than a gap.
-    blocks: "Nothing — retained for the record"

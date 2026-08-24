@@ -8,6 +8,7 @@ paper over by editing whichever side is easier to change.
 
 from __future__ import annotations
 
+import math
 from fractions import Fraction
 from pathlib import Path
 
@@ -274,3 +275,26 @@ def test_fba_only_bom_lines_are_charged_against_the_send_quantity(
     # 28 full-IFAK units + 5 Compact, not the 294 kits of total demand.
     assert bag.fba_prep_demand == 33
     assert bag.kit_demand == 0
+
+
+# --- The one rounding step ------------------------------------------------
+
+
+def test_demand_is_carried_as_an_exact_fraction_and_rounded_once(
+    result: ReplenishmentResult,
+) -> None:
+    """The spec's opening line used to say the arithmetic runs in integers.
+
+    It never has, and it should not: weekly velocity is units over 90 days,
+    which is almost never whole, and rounding each kit's contribution up on
+    the way would add a unit per kit per component. The document was the
+    side that was wrong, and it now describes exact fractions with a single
+    round-up at the net requirement. Here the worked example's own figures
+    happen to be whole; the fractional case is in
+    tests/test_report_says_why.py against the live configuration.
+    """
+    for plan in result.components:
+        assert isinstance(plan.gross_demand, Fraction)
+        assert isinstance(plan.raw_net, Fraction)
+        assert plan.net_units == max(math.ceil(plan.raw_net), 0)
+        assert isinstance(plan.order_units, int)

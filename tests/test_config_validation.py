@@ -198,7 +198,7 @@ def test_validate_config_command_passes_on_the_live_config(
     out = capsys.readouterr().out
     assert code == 0, out
     assert "No problems" in out
-    assert "2026-08-24" in out
+    assert "2026-08-25" in out
     assert "Traceback" not in out
 
 

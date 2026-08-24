@@ -99,8 +99,8 @@ def _sync_components(
                     purchase_asin, moq_min, moq_increment, units_per_purchase_unit,
                     purchase_unit_name, reorder_point, reorder_target,
                     cover_target_weeks, safety_stock_weeks,
-                    part_is_internal_reference)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    part_is_internal_reference, resale_only)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (entity_id, supplier_id, supplier_part_no) DO UPDATE
                    SET name                    = EXCLUDED.name,
                        class                   = EXCLUDED.class,
@@ -114,7 +114,8 @@ def _sync_components(
                        cover_target_weeks      = EXCLUDED.cover_target_weeks,
                        safety_stock_weeks      = EXCLUDED.safety_stock_weeks,
                        part_is_internal_reference =
-                           EXCLUDED.part_is_internal_reference
+                           EXCLUDED.part_is_internal_reference,
+                       resale_only             = EXCLUDED.resale_only
                 RETURNING id
                 """,
                 (
@@ -137,6 +138,7 @@ def _sync_components(
                     if component.safety_stock_weeks is not None
                     else None,
                     component.part_is_internal_reference,
+                    component.resale_only,
                 ),
             )
             row = cur.fetchone()

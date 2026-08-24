@@ -300,6 +300,7 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
             or (component_key.part if component_key.supplier == "amazon_business" else None),
             sales_asin=_str_or_none(entry.get("sales_asin")),
             part_is_internal_reference=internal_reference,
+            resale_only=bool(entry.get("resale_only", False)),
             cover_target_weeks=_fraction_or_none(entry.get("cover_target_weeks")),
             safety_stock_weeks=_fraction_or_none(entry.get("safety_stock_weeks")),
             loc=entry.loc,
@@ -356,6 +357,7 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
         ParkingLotItem(
             id=str(_require_map(item, "A parking lot item", loc_of(item)).get("id", "PL-?")),
             item=str(item.get("item", "")),
+            resolved=bool(item.get("resolved", False)),
             detail=_str_or_none(item.get("detail")),
             blocks=_str_or_none(item.get("blocks")),
             loc=loc_of(item),

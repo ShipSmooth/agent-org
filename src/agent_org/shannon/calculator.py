@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from enum import Enum
 from fractions import Fraction
 
 from agent_org.config.listings import ListingSet
@@ -44,8 +45,31 @@ NO_PURCHASE = "none"
 CART_SUFFIX = "_cart"
 
 
+class Sufficiency(str, Enum):
+    """Why a line needs nothing bought this week. They are not the same thing.
+
+    "Covered" was once used for all of them, which put a part with nothing on
+    hand, nothing on order and a build waiting on it in the same sentence as
+    a part with a year's stock. Only the first of these means covered.
+    """
+
+    COVERED = "covered"
+    NO_DEMAND = "no_demand"
+    CANNOT_ASSESS = "cannot_assess"
+    BLOCKING_BUILD = "blocking_build"
+
+
 def ceil_fraction(value: Fraction) -> int:
     return math.ceil(value)
+
+
+def format_number(value: Fraction | int) -> str:
+    """Print an exact number: 245 rather than 245.0, 34.29 when it is not whole."""
+    if isinstance(value, int):
+        return str(value)
+    if value.denominator == 1:
+        return str(value.numerator)
+    return f"{float(value):.2f}"
 
 
 def moq_round(quantity: int, component: Component) -> int:
@@ -90,6 +114,10 @@ class KitBuild:
     buildable_now: int
     limiting_component: ComponentKey | None
     limiting_note: str | None
+    # Every part that permits only `buildable_now`, not just the first: when
+    # four parts are at zero, ordering one of them changes nothing.
+    binding_components: tuple[ComponentKey, ...]
+    binding_notes: tuple[str, ...]
     build_blocked: str | None
     # The family's build recommendation, divided by this colourway's own
     # demand and its own assembled stock. The shares always sum to the
@@ -136,6 +164,8 @@ def _split_build(builds: list[KitBuild], family_build: int) -> list[KitBuild]:
             buildable_now=item.buildable_now,
             limiting_component=item.limiting_component,
             limiting_note=item.limiting_note,
+            binding_components=item.binding_components,
+            binding_notes=item.binding_notes,
             build_blocked=item.build_blocked,
             demand_units=item.demand_units,
             assembled_stock=item.assembled_stock,
@@ -201,11 +231,23 @@ class ComponentPlan:
     # Descriptive only, so a human recognises the listing. Never a join key.
     sales_asins: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
+    # Why this line needs nothing bought, and the sentence that says so.
+    # Only ever read for a line whose order quantity is zero.
+    sufficiency: Sufficiency = Sufficiency.COVERED
+    sufficiency_reason: str = ""
+    # Kits that cannot be assembled because this part has run out. A line
+    # named here can never be described as covered, whatever the arithmetic
+    # says: the same report would then call it fine and call it urgent.
+    blocks_builds: tuple[str, ...] = ()
 
     @property
     def order_by(self) -> str:
         """What to write on a purchase order for this line."""
         return self.name if self.part_is_internal_reference else self.key.part
+
+    @property
+    def in_stock_or_coming(self) -> int:
+        return self.on_hand + self.on_order + self.in_transit
 
 
 @dataclass(frozen=True)
@@ -297,6 +339,42 @@ def _parking_lot_for(suppressed: Sequence[SuppressedDemand]) -> tuple[ParkingLot
         )
         for item in suppressed
     )
+
+
+def _short_of(builds: Sequence[KitBuild]) -> str:
+    """What has run out, said once.
+
+    Four colourways of one kit share their parts, so the same shortage was
+    being repeated once per colourway and read as four separate problems.
+    Name the part once and say which colourways it stops.
+    """
+    blocked: dict[str, list[str]] = {}
+    for item in builds:
+        if item.buildable_now != 0:
+            continue
+        for note in item.binding_notes:
+            blocked.setdefault(note, []).append(item.kit_group)
+    return ", ".join(
+        f"{note} (stops {', '.join(groups)})" if len(builds) > 1 else note
+        for note, groups in blocked.items()
+    )
+
+
+def _build_blockers(kit_plans: Sequence[KitPlan]) -> dict[ComponentKey, tuple[str, ...]]:
+    """Which parts are stopping which kits being assembled.
+
+    The report names these in the build section, so a line named here must
+    never also be described as covered — one report calling the same part
+    fine and urgent is worse than either statement alone.
+    """
+    blockers: dict[ComponentKey, list[str]] = {}
+    for plan in kit_plans:
+        for member in plan.members:
+            if member.buildable_now != 0:
+                continue
+            for key in member.binding_components:
+                blockers.setdefault(key, []).append(member.kit_group)
+    return {key: tuple(kits) for key, kits in blockers.items()}
 
 
 class ReplenishmentCalculator:
@@ -553,14 +631,16 @@ class ReplenishmentCalculator:
                     # (PL-8). It speaks for no channel but Amazon's.
                     if sku is None and not (listing_set is not None and listing_set.covers(channel))
                 )
-                buildable, limiting, limiting_note = self._build_feasibility(kit)
+                buildable, binding = self._build_feasibility(kit)
                 builds.append(
                     KitBuild(
                         kit_group=kit.kit_group,
                         name=kit.name,
                         buildable_now=buildable,
-                        limiting_component=limiting,
-                        limiting_note=limiting_note,
+                        limiting_component=binding[0][0] if binding else None,
+                        limiting_note=binding[0][1] if binding else None,
+                        binding_components=tuple(key for key, _ in binding),
+                        binding_notes=tuple(note for _, note in binding),
                         build_blocked=kit.build_blocked,
                         demand_units=ceil_fraction(member_demand),
                         assembled_stock=member_stock,
@@ -582,11 +662,7 @@ class ReplenishmentCalculator:
                 )
 
             if build > buildable_total:
-                short = ", ".join(
-                    item.limiting_note
-                    for item in builds
-                    if item.limiting_note is not None and item.buildable_now == 0
-                )
+                short = _short_of(builds)
                 self.warnings.append(
                     f"{name}: {build} to build but only {buildable_total} can be "
                     f"assembled from stock on hand" + (f" — {short}" if short else "") + "."
@@ -641,11 +717,16 @@ class ReplenishmentCalculator:
             walmart_reserve=self.params.walmart_reserve_units,
         )
 
-    def _build_feasibility(self, kit: Kit) -> tuple[int, ComponentKey | None, str | None]:
-        """How many of this kit could be built right now, and what runs out first."""
+    def _build_feasibility(self, kit: Kit) -> tuple[int, tuple[tuple[ComponentKey, str], ...]]:
+        """How many of this kit could be built right now, and what runs out.
+
+        Every part that permits only that many is returned, not just the
+        first one found: with four parts at zero, naming one of them makes
+        the other three look fine when ordering the named one changes
+        nothing.
+        """
         buildable: int | None = None
-        limiting: ComponentKey | None = None
-        note: str | None = None
+        binding: list[tuple[ComponentKey, str]] = []
         for line in kit.lines:
             component = self.config.boms.components.get(line.component)
             if component is None:
@@ -659,14 +740,16 @@ class ReplenishmentCalculator:
                 continue  # prep items are consumed at packing, not at assembly
             available = self._stock_of(line.component.part).on_hand
             possible = max(available, 0) // max(line.qty, 1)
+            note = (
+                f"{component.name} ({line.component}) has {available} on hand, "
+                f"enough for {possible}"
+            )
             if buildable is None or possible < buildable:
                 buildable = possible
-                limiting = line.component
-                note = (
-                    f"{component.name} ({line.component}) has {available} on hand, "
-                    f"enough for {possible}"
-                )
-        return (buildable if buildable is not None else 0), limiting, note
+                binding = [(line.component, note)]
+            elif possible == buildable:
+                binding.append((line.component, note))
+        return (buildable if buildable is not None else 0), tuple(binding)
 
     # ------------------------------------------------------------- components
 
@@ -715,6 +798,9 @@ class ReplenishmentCalculator:
                 units = Fraction(allocation.fba_send if allocation else 0)
             prep[entry.consumes] = prep.get(entry.consumes, Fraction(0)) + units * entry.qty
 
+        suppressed = self._suppressed_demand(kit_plans)
+        blockers = _build_blockers(kit_plans)
+
         components: list[ComponentPlan] = []
         gaps: list[GapListEntry] = []
         for key, component in sorted(self.config.boms.components.items()):
@@ -726,12 +812,11 @@ class ReplenishmentCalculator:
                 exploded.get(key, Fraction(0)),
                 prep.get(key, Fraction(0)),
             )
+            plan = self._classify(plan, component, blockers, suppressed)
             components.append(plan)
             gap = self._gap_entry(plan)
             if gap is not None:
                 gaps.append(gap)
-
-        suppressed = self._suppressed_demand(kit_plans)
 
         box_plan = plan_boxes(
             fba_send_targets,
@@ -850,6 +935,108 @@ class ReplenishmentCalculator:
             if allocation.fba_send > 0:
                 fba_send_targets[key.part] = allocation.fba_send
         return allocations
+
+    def _kits_using(self, key: ComponentKey) -> tuple[str, ...]:
+        return tuple(
+            kit_group
+            for kit_group, kit in sorted(self.config.boms.kits.items())
+            if any(line.component == key for line in kit.lines)
+        )
+
+    def _classify(
+        self,
+        plan: ComponentPlan,
+        component: Component,
+        blockers: dict[ComponentKey, tuple[str, ...]],
+        suppressed: Sequence[SuppressedDemand],
+    ) -> ComponentPlan:
+        """Say why a line needs nothing bought, in words that are true.
+
+        Three separate states used to print the one word "covered": stock
+        that genuinely meets a calculated demand, a demand of zero, and a
+        reorder-point part with no reorder point set — which has no level to
+        be below and so cannot be assessed at all. A part with a build
+        waiting on it is a fourth, and never covered.
+        """
+        blocks = blockers.get(plan.key, ())
+        plan = replace(plan, blocks_builds=blocks)
+        if plan.order_units > 0:
+            return plan
+        window = self.params.velocity_window_days
+
+        # First, before any other reading: a part that has run out and is
+        # holding up an assembly is never described as fine, whatever the
+        # rest of the arithmetic says about it.
+        if blocks and plan.on_hand <= 0:
+            return replace(
+                plan,
+                sufficiency=Sufficiency.BLOCKING_BUILD,
+                sufficiency_reason=(
+                    f"nothing to order by the arithmetic, but stock is {plan.on_hand} and "
+                    + ", ".join(blocks)
+                    + " cannot be assembled without it"
+                ),
+            )
+
+        if plan.component_class is ComponentClass.REORDER_POINT and (
+            plan.reorder_point is None or plan.reorder_target is None
+        ):
+            return replace(
+                plan,
+                sufficiency=Sufficiency.CANNOT_ASSESS,
+                sufficiency_reason=(
+                    f"cannot be assessed — this is a reorder-point part and no reorder "
+                    f"point is set, so there is no level for {plan.in_stock_or_coming} "
+                    "to be below. Shannon is not saying it is fine; she is saying she "
+                    "has nothing to judge it against"
+                ),
+            )
+
+        if plan.gross_demand > 0:
+            if plan.component_class is ComponentClass.REORDER_POINT:
+                reason = (
+                    f"covered — {plan.in_stock_or_coming} available against a reorder "
+                    f"point of {plan.reorder_point}"
+                )
+            else:
+                reason = (
+                    f"covered — demand of {format_number(plan.gross_demand)} over the cover "
+                    f"period, against {plan.in_stock_or_coming} on hand, on order and in "
+                    "transit"
+                )
+            return replace(plan, sufficiency=Sufficiency.COVERED, sufficiency_reason=reason)
+
+        suppressed_here = next((item for item in suppressed if item.subject == plan.key.part), None)
+        used_by = self._kits_using(plan.key)
+        suppressed_kits = tuple(
+            item.subject for item in suppressed if item.kind == "kit" and item.subject in used_by
+        )
+        if suppressed_here is not None:
+            why = (
+                "every listing for it is inactive, so its sales measure the listing "
+                "rather than the demand — see DEMAND SUPPRESSED below"
+            )
+        elif suppressed_kits:
+            why = (
+                "the kits that use it are demand-suppressed ("
+                + ", ".join(suppressed_kits)
+                + "), so no kit demand reached it"
+            )
+        elif used_by:
+            why = (
+                "the kits that use it ("
+                + ", ".join(used_by)
+                + f") sold nothing in the last {window} days"
+            )
+        elif component.resale_only:
+            why = f"it is resold as it comes and sold nothing in the last {window} days"
+        else:
+            why = f"no kit consumes it and it sold nothing in the last {window} days"
+        return replace(
+            plan,
+            sufficiency=Sufficiency.NO_DEMAND,
+            sufficiency_reason=f"no demand this period — {why}",
+        )
 
     def _component_plan(
         self,

@@ -5,10 +5,18 @@ docs/conventions.md for the naming convention). A different engineer must be abl
 implement the calculator from this document alone. Where the design makes a
 judgment call, the call and its reasoning are stated inline.
 
-All demand math runs in integers of **sellable units** (what goes into a
-kit or ships to a customer). Ordering runs in **purchase units** (what the
-supplier sells — often a multi-unit pack); the conversion is §6.1 and it is
-the last step, never skipped. All time is in weeks. All parameters marked
+All demand math is denominated in **sellable units** (what goes into a kit
+or ships to a customer), and is carried as an **exact fraction** until the
+one rounding step in §6. Weekly velocity is units ÷ 90 days, which is
+almost never whole, so a demand of 151.26 units is a real intermediate
+figure and is printed as one. Rounding each kit's contribution up on the
+way would add a unit per kit per component and quietly over-order; the
+single round-up happens at `net_requirement`, and every order quantity is
+an integer. (Earlier drafts of this line said "integers" throughout, which
+the calculator has never done and should not: corrected 25 Aug 2026.)
+Ordering runs in **purchase units** (what the supplier sells — often a
+multi-unit pack); the conversion is §6.1 and it is the last step, never
+skipped. All time is in weeks. All parameters marked
 *(param)* are configurable per entity (and, where noted, per component or
 per channel) — none are constants in code.
 
@@ -23,7 +31,7 @@ real purchase orders.
 
 | Type | Example | Reorder math |
 |---|---|---|
-| **NAR finished kits** — bought complete from NAR, resold (mostly FBM, some FBA) | NAR Bleeding Control Kit | Forecast directly as a purchasable SKU. **No explosion.** |
+| **NAR finished kits** — bought complete from NAR, resold (mostly FBM, some FBA) | NAR Bleeding Control Kit | Forecast directly as a purchasable SKU. **No explosion.** Carried in `boms.yaml` as a `forecast` component with `resale_only: true` (§2.1.2) — 42 of them as of `bom_version: 2026-08-25`. |
 | **HMZ kits** — assembled in-house from components | Seven kits: Essential (Mobile 20-314, Wall Mounted 20-315), Express 25-001, Basic C-A-T 25-010, Basic C-A-T Red Bag 26-001, Basic SAM XT 26-002, IFAK with CAT Gen 7 & HyFin (4 colourways: IFAK-CAT-BLACK/-GREEN/-COYOTE/-MULTICAM), Compact IFAK Trauma Kit IFAK-CAT-COMPACT (black only; different carrier from the full IFAK) | **Never purchased.** Demand is exploded through the BOM into component demand (§2). The kit itself gets a *build* recommendation, not a purchase. |
 | **NAR components sold standalone** (mostly FBA, some FBM) | 30-0001 CAT Black, 10-0042 HyFin Vent Compact Twin | Forecast directly as a purchasable SKU. No explosion. A single physical component may receive demand from **both** standalone sales and kit explosion; the two are summed (§3). |
 
@@ -118,6 +126,25 @@ Rules:
   warning — silently un-exploded demand is exactly the bug this design
   exists to prevent.
 
+### 2.1.2 `resale_only` — a product that is bought, not made
+
+The 42 NAR finished kits and NAR standalone components Zach resells as
+they come are components in this file, because he buys them, but they are
+never *inside* anything. `resale_only: true` says exactly that:
+
+- forecast from the product's own sales, as any `forecast` component is;
+- never looked for in a kit, and never expected on a BOM line — a kit line
+  naming a `resale_only` component is a config **error**, since one part
+  cannot be both bought complete for resale and consumed by an assembly;
+- belonging to no kit is its normal state, so `validate-config` does not
+  warn about it. A component that is *not* marked this way and appears in
+  no kit still warns: that is usually a deleted kit line or a typo.
+
+MOQ is deliberately unset on all 42. NAR's terms are known only for the
+C-A-T (400/200) and HyFin (750/150), so these round to the nearest 5 and
+no further. A minimum is a config edit when Zach learns one, never a
+guess.
+
 ### 2.2 Explosion
 
 For component `c`, kit `k`, channel `ch`:
@@ -148,8 +175,11 @@ net_requirement(c) = gross_demand(c)
                      − on_order(c)         # Gmail-resolved outstanding orders (§3.1)
                      − in_transit(c)       # Veeqo FBA inbound + supplier ASNs
 
-order_units(c)     = 0                        if net_requirement(c) ≤ 0
-                   = round5(moq_round(net_requirement(c), c))   otherwise   (§6)
+net_units(c)       = max(ceil(net_requirement(c)), 0)   # the ONLY round-up
+                                                        # of demand: exact
+                                                        # fractions above it
+order_units(c)     = 0                        if net_units(c) ≤ 0
+                   = round5(moq_round(net_units(c), c))         otherwise   (§6)
 ```
 
 The cover target is **inclusive** of lead time — 7 weeks of cover means

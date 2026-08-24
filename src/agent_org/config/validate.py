@@ -108,7 +108,13 @@ def _check_suppliers(config: LoadedConfig) -> list[Finding]:
 def _check_components(config: LoadedConfig) -> list[Finding]:
     findings: list[Finding] = []
     boms = config.boms
+    # FBA packaging is consumed by a prep rule rather than by a kit line, so
+    # it counts as used: it is not a part somebody forgot to attach.
+    used_by_kits = {line.component for kit in boms.kits.values() for line in kit.lines} | {
+        rule.consumes for rule in boms.standalone_fba_prep
+    }
     for key, component in boms.components.items():
+        findings += _check_kit_membership(component, key in used_by_kits)
         if key.supplier not in boms.suppliers:
             findings.append(
                 error(
@@ -161,6 +167,51 @@ def _check_components(config: LoadedConfig) -> list[Finding]:
                 )
             )
     return findings
+
+
+def _check_kit_membership(component: Component, used: bool) -> list[Finding]:
+    """Whether a component belonging to no kit is a gap or the normal state.
+
+    A NAR finished kit is bought complete and resold as it comes: it is
+    forecast from its own sales and never appears inside anything, so
+    `resale_only` says so and no warning is raised. A part that is *not*
+    marked that way and is in no kit is different — most likely a kit line
+    was deleted or its part number was mistyped, and the line will be
+    ordered for a kit that no longer asks for it.
+    """
+    if component.component_class not in PURCHASABLE_CLASSES:
+        return []
+    if used:
+        if component.resale_only:
+            return [
+                error(
+                    f"Component {component.key} is marked 'resale_only' but a kit uses "
+                    "it as a part. It cannot be both bought complete for resale and "
+                    "consumed by an assembly.",
+                    component.loc,
+                    fix=(
+                        "Remove 'resale_only: true', or remove the kit line that uses "
+                        "it. If the resold product and the kit part are genuinely two "
+                        "different things, give them separate part numbers."
+                    ),
+                    blocks_run=False,
+                )
+            ]
+        return []
+    if component.resale_only:
+        return []
+    return [
+        warning(
+            f"Component {component.key} ({component.name}) is in no kit, and it is not "
+            "marked 'resale_only', so Shannon will forecast it from its own sales "
+            "alone. If it should be part of a kit, that kit line is missing.",
+            component.loc,
+            fix=(
+                "Add it to the kit that uses it, or mark it 'resale_only: true' if it "
+                "is a finished product bought complete and resold as it comes."
+            ),
+        )
+    ]
 
 
 def _check_listings(config: LoadedConfig, channel_keys: set[str]) -> list[Finding]:

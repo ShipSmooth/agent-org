@@ -81,6 +81,10 @@ class Component:
     # by product name. The part is then ours, held for identity only, and is
     # never quoted to the supplier as a SKU.
     part_is_internal_reference: bool
+    # True for a finished product Zach buys complete and resells as it comes:
+    # forecast from its own sales, never looked for inside a kit. Not being
+    # used by any kit is its normal state, not a gap in the parts list.
+    resale_only: bool
     cover_target_weeks: Fraction | None
     safety_stock_weeks: Fraction | None
     loc: Loc
@@ -144,6 +148,9 @@ class StandaloneFbaPrep:
 class ParkingLotItem:
     id: str
     item: str
+    # A settled question is not something Zach still has to deal with, so it
+    # leaves the live list and is kept in a closed section for the record.
+    resolved: bool
     detail: str | None
     blocks: str | None
     loc: Loc

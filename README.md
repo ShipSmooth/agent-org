@@ -24,6 +24,9 @@ Running it for the first time, written for a non-engineer:
   whole system in plain English (start here)
 - [docs/replenishment.md](docs/replenishment.md) — the reorder calculation,
   fully specified, with a worked numeric example
+- [docs/live-data.md](docs/live-data.md) — what Veeqo and Gmail really
+  return, what happens when they fail, the Monday email, and what a crash
+  leaves behind
 - [docs/policy.md](docs/policy.md) — the four autonomy tiers, default-deny
 - [docs/architecture.md](docs/architecture.md) — processes, task state
   machine, failure model

@@ -117,7 +117,7 @@ CREATE TABLE products (
                                                   -- are in the both case).
     component_id   UUID REFERENCES components(id), -- standalone sales of a component
     kit_group      TEXT,                          -- groups channel aliases of one HMZ kit
-    channel_alias  TEXT,                          -- 'fba' | 'fbm' | ... within kit_group
+    channel_alias  TEXT,                          -- 'amazon_fba' | 'amazon_fbm' | ... within kit_group
     status         TEXT NOT NULL DEFAULT 'active'
                      CHECK (status IN ('active', 'draft', 'archived')),
     UNIQUE (entity_id, sku)
@@ -246,6 +246,39 @@ CREATE TABLE order_history (
     lines         JSONB NOT NULL,                -- [{sku, qty, unit_price}]
     source        TEXT NOT NULL CHECK (source IN ('manual_backfill', 'staged_cart', 'purchase')),
     proposal_id   UUID REFERENCES action_proposals(id)
+);
+
+-- ============ report_emails (a send attempt, not a run) ============
+-- Kept apart from reports so a resend is never mistaken for a re-run:
+-- one report may have several attempts, and a FAILED one leaves the
+-- report itself untouched.
+CREATE TABLE report_emails (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity_id     TEXT NOT NULL REFERENCES entities(id),
+    report_id     UUID NOT NULL REFERENCES reports(id),
+    recipients    TEXT NOT NULL,                 -- resolved from roles, never literals
+    subject       TEXT NOT NULL,
+    status        TEXT NOT NULL CHECK (status IN ('SENT', 'FAILED')),
+    error         TEXT,                          -- the reason, verbatim, when FAILED
+    attempted_at  TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+
+-- ============ manual_stock_proposals (one proposal per hand count) ==
+-- The memory that stops weekly nagging about a shelf nobody has
+-- recounted: a row per (component, counted_on). A new count date is a
+-- new fact and may be proposed against again.
+CREATE TABLE manual_stock_proposals (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity_id     TEXT NOT NULL REFERENCES entities(id),
+    supplier      TEXT NOT NULL,
+    part          TEXT NOT NULL,
+    counted_on    DATE NOT NULL,
+    count_units   INT NOT NULL,                  -- the count she saw when she asked
+    proposed_units INT NOT NULL,
+    report_id     UUID REFERENCES reports(id),
+    proposed_on   DATE NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    UNIQUE (entity_id, supplier, part, counted_on)
 );
 ```
 

@@ -110,17 +110,25 @@ class TaskQueue:
         return task
 
     def claim(
-        self, kinds: tuple[str, ...] | None = None, schedule_slot: str | None = None
+        self,
+        kinds: tuple[str, ...] | None = None,
+        schedule_slot: str | None = None,
+        states: tuple[TaskState, ...] = (TaskState.QUEUED,),
     ) -> Task | None:
-        """Take the oldest queued task, if any, and mark it RUNNING.
+        """Take the oldest waiting task, if any, and mark it RUNNING.
 
         Naming a slot claims that slot and nothing else: a run for this week
         must never pick up the task the scheduler queued for another week and
         write that week's report under this week's numbers.
+
+        `states` is normally just QUEUED. A caller retrying a week whose run
+        failed passes FAILED as well: nothing was completed, so there is
+        nothing to supersede and no reason to demand `--again`. Attempts are
+        still counted, and a task out of attempts is not claimed.
         """
         clause = "AND kind = ANY(%s)" if kinds else ""
         slot_clause = "AND schedule_slot = %s" if schedule_slot is not None else ""
-        params: list[Any] = [self.entity_id]
+        params: list[Any] = [self.entity_id, [state.value for state in states]]
         if kinds:
             params.append(list(kinds))
         if schedule_slot is not None:
@@ -129,7 +137,8 @@ class TaskQueue:
             cur.execute(
                 f"""
                 SELECT {COLUMNS} FROM tasks
-                 WHERE entity_id = %s AND state = 'QUEUED' {clause} {slot_clause}
+                 WHERE entity_id = %s AND state = ANY(%s) {clause} {slot_clause}
+                   AND attempts < max_attempts
                  ORDER BY created_at
                  FOR UPDATE SKIP LOCKED
                  LIMIT 1

@@ -24,6 +24,12 @@ recipients:
     email: zach@ithrivemedical.com
     sms: env:ZACH_SMS_NUMBER               # resolved as ITHRIVE_ZACH_SMS_NUMBER
 
+# Who Monday's report is emailed to, by role. Roles only: no address is
+# written in code, and shipsmooth.com is a vendor identity that receives
+# no operational mail.
+reports:
+  email_to: [zach]
+
 # ---- Replenishment parameters (docs/replenishment.md §9) ----
 parameters:
   velocity_window_days: 90

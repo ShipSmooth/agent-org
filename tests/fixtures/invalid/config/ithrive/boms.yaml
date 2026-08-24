@@ -93,7 +93,7 @@ components:
   - {supplier: unsourced, part: "GLOVE-BLK-L", name: "Nitrile gloves, black, large",
      class: forecast, units_per_purchase_unit: 1}
 
-  # ---- FBA prep, consumed by the `channels: [fba]` line below -------------
+  # ---- FBA prep, consumed by the `channels: [amazon_fba]` line below -------------
   - {supplier: amazon_business, part: "B07X6QZ53J", name: "FBA bag with suffocation warning (large)",
      class: reorder_point, units_per_purchase_unit: 1,
      reorder_point: 200, reorder_target: 1000}
@@ -127,7 +127,7 @@ kits:
     name: IFAK with CAT Gen 7 & HyFin — Black
     family: IFAK-CAT
     family_name: IFAK with CAT Gen 7 & HyFin (all colourways)
-    aliases: {fba: TODO, fbm: IFAK-CAT-BLACK, shopify: IFAK-CAT-BLACK, tiktok: IFAK-TT}
+    aliases: {amazon_fba: TODO, amazon_fbm: IFAK-CAT-BLACK, shopify: IFAK-CAT-BLACK, tiktok: IFAK-TT}
     components: &ifak_common
       - {supplier: own_printed, part: CARD-TODO, qty: 1}
       - {supplier: nar, part: "30-0001", qty: 1}
@@ -135,27 +135,27 @@ kits:
       - {supplier: nar, part: "ZZ-0034", qty: 1}
       - {supplier: internal, part: "HMZ-0001", qty: 1}
       - {supplier: unsourced, part: "GLOVE-BLK-L", qty: 2}
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
     pouch: {supplier: world_richman, part: "IFAK-CAT-BLACK-bag", qty: 1}
 
   IFAK-CAT-GREEN:
     name: IFAK with CAT Gen 7 & HyFin — Green
     family: IFAK-CAT
-    aliases: {fba: IFAK-CAT-GREEN-FBA, fbm: IFAK-CAT-GREEN, shopify: IFAK-CAT-GREEN}
+    aliases: {amazon_fba: IFAK-CAT-GREEN-FBA, amazon_fbm: IFAK-CAT-GREEN, shopify: IFAK-CAT-GREEN}
     components: *ifak_common
     pouch: {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", qty: 1}
 
   IFAK-CAT-COYOTE:
     name: IFAK with CAT Gen 7 & HyFin — Coyote
     family: IFAK-CAT
-    aliases: {fba: IFAK-CAT-COYOTE-FBA, fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
+    aliases: {amazon_fba: IFAK-CAT-COYOTE-FBA, amazon_fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
     components: *ifak_common
     pouch: {supplier: world_richman, part: "IFAK-CAT-COYOTE-bag", qty: 1}
 
   IFAK-CAT-MULTICAM:
     name: IFAK with CAT Gen 7 & HyFin — Multicam
     family: IFAK-CAT
-    aliases: {fba: IFAK-CAT-MULTICAM-FBA, fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
+    aliases: {amazon_fba: IFAK-CAT-MULTICAM-FBA, amazon_fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
     components: *ifak_common
     pouch: {supplier: world_richman, part: "IFAK-CAT-MULTICAM-bag", qty: 1}
 
@@ -163,12 +163,12 @@ kits:
   IFAK-CAT-COMPACT:
     name: Compact IFAK
     family: IFAK-CAT-COMPACT
-    aliases: {fba: IFAK-CAT-COMPACT-FBA, fbm: IFAK-CAT-COMPACT, shopify: IFAK-CAT-COMPACT}
+    aliases: {amazon_fba: IFAK-CAT-COMPACT-FBA, amazon_fbm: IFAK-CAT-COMPACT, shopify: IFAK-CAT-COMPACT}
     components:
       - {supplier: nar, part: "30-0001", qty: 1}
       - {supplier: nar, part: "10-0042", qty: 1}
       - {supplier: internal, part: "HMZ-0001", qty: 1}
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
     pouch: {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", qty: 1}
 
   # Zero velocity: it exists here to hold the non_stocked wall mount and the
@@ -176,7 +176,7 @@ kits:
   ESSENTIAL-WALL:
     name: Essential Wall Mounted
     family: ESSENTIAL-WALL
-    aliases: {fbm: ESSENTIAL-WALL, shopify: ESSENTIAL-WALL}
+    aliases: {amazon_fbm: ESSENTIAL-WALL, shopify: ESSENTIAL-WALL}
     components:
       - {supplier: world_richman, part: "WALL-MOUNT-01", qty: 1}
       - {supplier: dynarex, part: "3161", qty: 2}

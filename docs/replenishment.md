@@ -64,7 +64,7 @@ bom_version: 2026-08-20          # date-stamped; printed on every report
 kits:
   IFAK-CAT-BLACK:                       # other colourways: IFAK-CAT-GREEN,
     aliases:                            # IFAK-CAT-COYOTE, IFAK-CAT-MULTICAM
-      fbm: IFAK-CAT-BLACK               # the Veeqo bundle SKU used for FBM/Shopify
+      amazon_fbm: IFAK-CAT-BLACK        # the Veeqo bundle SKU used for merchant-fulfilled/Shopify
       shopify: IFAK-CAT-BLACK           # Amazon's OWN SKU is not here: see listings.yaml
     components:                         # identity is (supplier, supplier_part_number)
       - {supplier: nar, part: "30-0001", qty: 1}   # C-A-T Gen 7, black
@@ -144,6 +144,56 @@ MOQ is deliberately unset on all 42. NAR's terms are known only for the
 C-A-T (400/200) and HyFin (750/150), so these round to the nearest 5 and
 no further. A minimum is a config edit when Zach learns one, never a
 guess.
+
+### 2.1.3 `stock_source` — where on-hand comes from
+
+Default `veeqo`. Eleven components (labels, bags, zip ties, shears, MOLLE
+pouches) have never been held in Veeqo: Zach counts them on a shelf. Veeqo
+returning nothing for them is not a zero, so they say where their number
+comes from:
+
+```yaml
+stock_source: manual
+manual_stock:
+  count: 4000
+  counted_on: 2026-08-26
+```
+
+- On-hand is `manual_stock.count`. Veeqo is not asked, and its silence is
+  never read as an empty shelf.
+- The report prints the figure and its age in words: *"Blue dot label —
+  4,000, counted 26 Aug (3 weeks ago) — counted by hand, not held in
+  Veeqo."*
+- A count older than **eight weeks** is still used — it is the only figure
+  there is — and a `RECOUNT-*` item goes to the parking lot.
+- **One proposal per count.** Once an order has been proposed against a
+  given `counted_on`, the same order is not proposed again while that date
+  is unchanged; the line says so instead: *"Proposed 100 on 5 Oct against
+  this same count of 0. Not repeating it. Tell me the new count when they
+  arrive."* The record is a row in `manual_stock_proposals` keyed on
+  `(entity, supplier, part, counted_on)`, so the suppression survives a
+  `--again` re-run as well as an ordinary week. A new count date is a new
+  fact and proposes again.
+- `validate-config` rejects `stock_source: manual` with no `manual_stock`
+  block, and rejects a `counted_on` in the future.
+
+### 2.1.4 `reorder_quantity` — a quantity, not a target
+
+`reorder_target` means *top up to this level*. `reorder_quantity` means
+*buy this many*, which is how Zach states the eleven: "when I get to 200,
+reorder 1,000." A component sets one or the other and never both;
+`validate-config` enforces it.
+
+```
+if available >= reorder_point:      order 0
+elif reorder_quantity is set:       order max(reorder_quantity,
+                                              reorder_point - available)
+else:                               order max(reorder_target - available, 0)
+```
+
+The `max` is the only subtlety: a fixed order that would leave the part
+still below its own threshold is raised to clear it. MOQ, round-to-5 and
+pack conversion (§6) then apply unchanged.
 
 ### 2.2 Explosion
 
@@ -823,6 +873,10 @@ stack traces**. Checks:
   simply held elsewhere; it is **not** suppressed for Shopify, which that
   file says nothing about.
 - `reorder_point ≤ reorder_target` (warning).
+- A component sets `reorder_target` **or** `reorder_quantity`, never both
+  (§2.1.4).
+- `stock_source: manual` carries a `manual_stock` block, and its
+  `counted_on` is not in the future (§2.1.3).
 - Every recipient role referenced by any notification rule (email or SMS)
   is mapped to a real address/number for this entity in
   `config/<entity>/shannon.yaml` — an unmapped role is a **config-load

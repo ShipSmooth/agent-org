@@ -43,6 +43,12 @@ rules:
     tier: 0
   - action: internal.write_ops_reminder_report
     tier: 0
+  # Emailing the report to the business's own operator, at the address that
+  # entity's own config names. Tier 0 rather than Tier 2 because Tier 2 is
+  # "reaches an outside person" and Zach is the operator this system
+  # reports to. Deliberately not `notify.email`, which stays Tier 2.
+  - action: internal.email_report_to_owner
+    tier: 0
 
   # ---- Tier 1: internal state, notify after ----
   - action: internal.enqueue_task
@@ -75,6 +81,13 @@ rules:
     tier: 3
   - action: credentials.rotate
     tier: 3
+
+# An action that cannot be undone is Tier 3, and that default stands for
+# everything not named here. An email cannot be recalled; handing this
+# week's report back to the address that asked for it is accepted at its
+# own tier all the same.
+accepted_irreversible_actions:
+  - internal.email_report_to_owner
 
 escalations:
   - match: {category: purchase}

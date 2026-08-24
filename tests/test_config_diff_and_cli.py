@@ -52,7 +52,7 @@ def test_the_schedule_command_lists_what_is_wired(capsys: pytest.CaptureFixture[
     out = capsys.readouterr().out
     assert code == 0
     assert "shannon_replenishment" in out
-    assert "Phase 1 runs are started by hand" in out
+    assert "Runs are started by hand" in out
 
 
 def test_a_command_needing_the_database_says_what_to_do_without_one(

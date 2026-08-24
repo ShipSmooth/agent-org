@@ -51,6 +51,12 @@ address is a vendor/tooling identity and receives no agent mail.
 - `amazon_business.stage_cart` (Tier 1, ops-consumable cart URL)
 - `nar.stage_cart` (Tier 2), `dynarex.stage_cart` (Tier 2), `notify.email`
   (Tier 2), `notify.sms` (Tier 2, urgent/anomalous only)
+- `internal.email_report_to_owner` (Tier 0) — the one send Shannon makes
+  under `max_tier_this_phase: 0`: her own report, to the owner role of her
+  own entity, and nothing else. It is irreversible, so it is named in
+  `accepted_irreversible_actions` in `config/policy/global.yaml` rather
+  than being quietly exempt. Supplier-facing mail stays at Tier 2 and is
+  unreachable in this phase.
 
 **Tiers she can reach:** 0–2 by rule; her proposals escalate to Tier 3 on
 the anomaly triggers in docs/policy.md.

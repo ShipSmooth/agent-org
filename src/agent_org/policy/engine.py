@@ -72,8 +72,19 @@ class PolicyEngine:
             reasons.append(f"rule '{action_type}' is tier {rule.tier}")
 
         if ctx.reversible == "no" and tier < 3:
-            tier = 3
-            reasons.append("the action cannot be undone")
+            # Irreversible means Tier 3, unless policy names this action as
+            # one whose irreversibility is understood and accepted — an
+            # email to the operator's own address is the only one today.
+            # The exception is data, listed in policy where Zach can read
+            # it, rather than a judgement made here.
+            if action_type in self.policy.accepted_irreversible:
+                reasons.append(
+                    "the action cannot be undone, and policy names it as an accepted "
+                    "irreversible action at its own tier"
+                )
+            else:
+                tier = 3
+                reasons.append("the action cannot be undone")
 
         if ctx.category == "purchase":
             escalated, why = self._purchase_escalations(ctx, history or TrailingHistory())

@@ -1,4 +1,4 @@
-"""Veeqo — read only, and in this phase from fixtures on disk.
+"""Veeqo — read only, from the live API or from fixtures on disk.
 
 Two facts from the reorder procedure are encoded here rather than left to
 whoever reads the report:
@@ -9,16 +9,39 @@ whoever reads the report:
 * Negative availability is real. A SKU at -12 is twelve units short
   against orders already placed; clamping that to zero would quietly
   under-order by twelve.
+
+What the live API actually provides, which is not what Phase 1 guessed:
+
+* Stock: `GET /products`, paginated. Each product holds `sellables`, each
+  sellable holds `sku_code` and one `stock_entries` row per warehouse,
+  with `physical_stock_level`, `available_stock_level`,
+  `allocated_stock_level`, `incoming_stock_level` and
+  `infinite`. Per-SKU-per-location, as required, and the FBA warehouse is
+  one of those rows rather than a separate feed.
+* Velocity: `GET /orders`, paginated, filtered by `created_at_min` /
+  `created_at_max`, each order carrying `created_at`, `status`, `channel`
+  and `line_items` whose `sellable.sku_code` and `quantity` are the units
+  sold. There is no per-channel sales-history report endpoint: the split
+  by channel is computed here from each order's channel, not read.
+* History for a suppressed line is the same `GET /orders` call over an
+  earlier window. There is no separate history export.
+
+There is no credential in this file. `VEEQO_API_KEY` is read from the
+environment at the moment of use, and a missing one stops the run.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
-from dataclasses import dataclass
-from datetime import datetime
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from agent_org.integrations.reads import (
     AMAZON_US_FBA_WAREHOUSE_ID,
@@ -29,6 +52,13 @@ from agent_org.integrations.reads import (
 )
 
 NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+
+VEEQO_API_KEY_VAR = "VEEQO_API_KEY"
+VEEQO_BASE_URL = "https://api.veeqo.com"
+PAGE_SIZE = 100
+# Veeqo counts a cancelled order as an order. Counting one as a sale would
+# forecast demand that never existed.
+NOT_A_SALE = frozenset({"cancelled", "canceled", "refunded"})
 
 
 def first_value(cell: object) -> int:
@@ -156,4 +186,260 @@ class VeeqoFixtureClient:
         return shipments
 
 
-__all__ = ["VeeqoFixtureClient", "first_value"]
+def api_key(credentials_prefix: str = "") -> str:
+    """The Veeqo key, from the environment and nowhere else.
+
+    Never logged, never defaulted, never written to a report. A missing key
+    stops the run with a sentence naming the variable to set.
+
+    The name is the entity's own: `ITHRIVE_VEEQO_API_KEY`, not a shared
+    one, so a second business's account can never be read with the first
+    business's key.
+    """
+    name = f"{credentials_prefix}{VEEQO_API_KEY_VAR}"
+    key = os.environ.get(name, "").strip()
+    if not key:
+        raise ReadFailure(
+            f"{name} is not set, so Veeqo cannot be read and this week's "
+            "stock is unknown. The run stops rather than treat an unreadable Veeqo as "
+            "empty shelves. Put the key in the environment (or in .env) and run again."
+        )
+    return key
+
+
+def stock_of_sellable(sku: str, entries: list[Mapping[str, Any]]) -> StockPosition:
+    """One sellable's stock, split into warehouse and FBA.
+
+    `available_stock_level` is physical minus what is already committed to
+    orders, and it keeps its sign: -12 means twelve short against orders
+    placed, which is a real backlog and not something to clamp.
+    """
+    warehouse = 0
+    fba = 0
+    for entry in entries:
+        if entry.get("infinite"):
+            # A location holding "infinite" stock is a Veeqo setting, not a
+            # count. Adding a made-up number here would be worse than none.
+            continue
+        available = first_value(entry.get("available_stock_level", 0))
+        if int(entry.get("warehouse_id", 0) or 0) == AMAZON_US_FBA_WAREHOUSE_ID:
+            fba += available
+        else:
+            warehouse += available
+    return StockPosition(sku=sku, warehouse_available=warehouse, fba_sellable=fba)
+
+
+def incoming_to_fba(sku: str, entries: list[Mapping[str, Any]]) -> int:
+    """Units already on their way into the Amazon warehouse.
+
+    Veeqo carries this as `incoming_stock_level` on the FBA location's
+    stock entry. It is the same fact the Phase 1 fixture called an inbound
+    shipment, minus the expected-arrival date, which the API does not give.
+    """
+    return sum(
+        first_value(entry.get("incoming_stock_level", 0))
+        for entry in entries
+        if int(entry.get("warehouse_id", 0) or 0) == AMAZON_US_FBA_WAREHOUSE_ID
+    )
+
+
+def sellables_of(product: Mapping[str, Any]) -> Iterator[tuple[str, list[Mapping[str, Any]]]]:
+    """Every (SKU, stock entries) pair in one product.
+
+    A Veeqo product is a container: a simple product has one sellable, a
+    product with variants has several, and each of those is a SKU Zach
+    sells. Reading only the first would lose the variants.
+    """
+    for sellable in product.get("sellables", []):
+        sku = str(sellable.get("sku_code") or "").strip()
+        if not sku:
+            continue
+        entries: list[Mapping[str, Any]] = [
+            entry for entry in sellable.get("stock_entries", []) if isinstance(entry, dict)
+        ]
+        yield sku, entries
+
+
+@dataclass(frozen=True)
+class VeeqoLiveClient:
+    """The live Veeqo account, read only.
+
+    Every method here is a GET. There is no code in this class that could
+    write to Veeqo, change an order or move stock — not disabled by a flag,
+    absent.
+
+    `channel_keys` maps the channel name Veeqo reports on an order to the
+    channel key this system uses (`amazon_fba`, `amazon_fbm`, `shopify`).
+    A channel Veeqo reports and configuration does not name stops the run:
+    quietly dropping its sales would understate demand, and quietly adding
+    them to another channel would misdirect an FBA send.
+    """
+
+    channel_keys: Mapping[str, str]
+    credentials_prefix: str = ""
+    timeout_seconds: float = 30.0
+    base_url: str = VEEQO_BASE_URL
+    today: date | None = None
+    # Injected in tests, which is how the live parsing is exercised without
+    # a credential and without a network.
+    transport: httpx.BaseTransport | None = field(default=None, compare=False)
+
+    def _client(self) -> httpx.Client:
+        return httpx.Client(
+            base_url=self.base_url,
+            headers={
+                "x-api-key": api_key(self.credentials_prefix),
+                "Accept": "application/json",
+            },
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        )
+
+    def _pages(self, client: httpx.Client, path: str, params: dict[str, Any]) -> Iterator[Any]:
+        """Every page of a paginated Veeqo collection.
+
+        A short page ends it. A failure at any point raises: half a page of
+        orders is not a smaller week, it is an unknown one.
+        """
+        page = 1
+        while True:
+            try:
+                response = client.get(path, params={**params, "page": page, "page_size": PAGE_SIZE})
+                response.raise_for_status()
+                payload = response.json()
+            except httpx.HTTPError as exc:
+                raise ReadFailure(
+                    f"Veeqo would not answer for {path} (page {page}): {exc}. The run stops: "
+                    "a partial read of Veeqo would produce a confident report built on "
+                    "part of the numbers."
+                ) from exc
+            except ValueError as exc:
+                raise ReadFailure(
+                    f"Veeqo's answer for {path} (page {page}) was not readable JSON. "
+                    "The run stops rather than guess at what it held."
+                ) from exc
+            if not isinstance(payload, list):
+                raise ReadFailure(
+                    f"Veeqo returned {type(payload).__name__} for {path}, not a list of "
+                    "records. Nothing is assumed about the shape; the run stops."
+                )
+            yield from payload
+            if len(payload) < PAGE_SIZE:
+                return
+            page += 1
+
+    def read_inventory(self) -> dict[str, StockPosition]:
+        positions: dict[str, StockPosition] = {}
+        with self._client() as client:
+            for product in self._pages(client, "/products", {}):
+                if not isinstance(product, dict):
+                    continue
+                for sku, entries in sellables_of(product):
+                    positions[sku] = stock_of_sellable(sku, entries)
+        return positions
+
+    def read_fba_inbound(self) -> dict[str, InboundShipment]:
+        """What is already on its way to Amazon, per SKU.
+
+        Veeqo gives the quantity but not an arrival date, so `expected_at`
+        is left empty rather than filled with a plausible-looking guess.
+        """
+        shipments: dict[str, InboundShipment] = {}
+        with self._client() as client:
+            for product in self._pages(client, "/products", {}):
+                if not isinstance(product, dict):
+                    continue
+                for sku, entries in sellables_of(product):
+                    units = incoming_to_fba(sku, entries)
+                    if units:
+                        shipments[sku] = InboundShipment(sku=sku, units=units, expected_at=None)
+        return shipments
+
+    def read_velocity(self, window_days: int) -> dict[str, SalesVelocity]:
+        end = self.today or datetime.now(tz=UTC).date()
+        return self._orders_between(end - timedelta(days=window_days), end, window_days)
+
+    def read_velocity_history(self) -> dict[str, SalesVelocity]:
+        """The year before the forecast window, for suppressed lines only.
+
+        Phase 1 invented a `velocity_history.json` export. There is no such
+        export: this is the same `GET /orders` call over an earlier window,
+        which is why it can answer "what did this sell before the listing
+        came down" at all.
+        """
+        end = self.today or datetime.now(tz=UTC).date()
+        window = 365
+        return self._orders_between(end - timedelta(days=window), end, window)
+
+    def _orders_between(self, start: date, end: date, window_days: int) -> dict[str, SalesVelocity]:
+        totals: dict[str, int] = {}
+        by_channel: dict[str, dict[str, int]] = {}
+        unknown: set[str] = set()
+        with self._client() as client:
+            orders = self._pages(
+                client,
+                "/orders",
+                {"created_at_min": start.isoformat(), "created_at_max": end.isoformat()},
+            )
+            for order in orders:
+                if not isinstance(order, dict):
+                    continue
+                if str(order.get("status", "")).lower() in NOT_A_SALE:
+                    continue
+                channel_name = self._channel_name(order)
+                channel_key = self.channel_keys.get(channel_name)
+                if channel_key is None:
+                    unknown.add(channel_name)
+                    continue
+                for item in order.get("line_items", []):
+                    if not isinstance(item, dict):
+                        continue
+                    sellable = item.get("sellable")
+                    sku = (
+                        str(sellable.get("sku_code") or "").strip()
+                        if isinstance(sellable, dict)
+                        else ""
+                    )
+                    if not sku:
+                        continue
+                    quantity = first_value(item.get("quantity", 0))
+                    totals[sku] = totals.get(sku, 0) + quantity
+                    channels = by_channel.setdefault(sku, {})
+                    channels[channel_key] = channels.get(channel_key, 0) + quantity
+        if unknown:
+            raise ReadFailure(
+                "Veeqo reports sales on channels this configuration does not name: "
+                + ", ".join(f"'{name}'" for name in sorted(unknown))
+                + ". Shannon will not decide for herself whether those are FBA sales "
+                "or merchant-fulfilled ones, because the answer moves stock to Amazon. "
+                "Add each one under 'channels:' in the entity's configuration, with the "
+                "name exactly as Veeqo spells it, and run again."
+            )
+        return {
+            sku: SalesVelocity(
+                sku=sku,
+                units_sold=units,
+                window_days=window_days,
+                by_channel=dict(by_channel.get(sku, {})),
+            )
+            for sku, units in totals.items()
+        }
+
+    @staticmethod
+    def _channel_name(order: Mapping[str, Any]) -> str:
+        channel = order.get("channel")
+        if isinstance(channel, dict):
+            return str(channel.get("name") or channel.get("type_code") or "").strip()
+        return str(channel or "").strip()
+
+
+__all__ = [
+    "VEEQO_API_KEY_VAR",
+    "VeeqoFixtureClient",
+    "VeeqoLiveClient",
+    "api_key",
+    "first_value",
+    "incoming_to_fba",
+    "sellables_of",
+    "stock_of_sellable",
+]

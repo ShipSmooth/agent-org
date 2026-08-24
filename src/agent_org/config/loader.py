@@ -10,6 +10,7 @@ sensible to report against.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ from typing import Any
 from agent_org.config.errors import ConfigError, Finding, error
 from agent_org.config.listings import EMPTY, load_listings
 from agent_org.config.models import (
+    STOCK_SOURCE_VEEQO,
+    STOCK_SOURCES,
     AgentSchedule,
     BomConfig,
     BomLine,
@@ -28,6 +31,7 @@ from agent_org.config.models import (
     EntityConfig,
     Kit,
     LoadedConfig,
+    ManualStock,
     OpsReminderGroup,
     PackSizePolicy,
     Parameters,
@@ -103,6 +107,64 @@ def _str_or_none(value: Any) -> str | None:
     return str(value)
 
 
+def _date_or_none(value: Any) -> date | None:
+    """A `counted_on:` date. YAML gives a real date; a string is accepted."""
+    if is_unresolved(value) or isinstance(value, bool):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _manual_stock(entry: YamlMap, key: ComponentKey, findings: list[Finding]) -> ManualStock | None:
+    """Read a hand count, or say precisely what is wrong with it.
+
+    A malformed count is not loaded as a lenient `None`: a count is a number
+    that decides whether money is spent, and half of one is worse than none.
+    """
+    block = entry.get("manual_stock")
+    if block is None:
+        return None
+    if not isinstance(block, YamlMap):
+        findings.append(
+            error(
+                f"Component {key} has a 'manual_stock' that is not a block.",
+                entry.loc_of("manual_stock"),
+                fix="Write 'manual_stock:' with 'count:' and 'counted_on:' beneath it.",
+            )
+        )
+        return None
+    count = _int_or_none(block.get("count"))
+    counted_on = _date_or_none(block.get("counted_on"))
+    if count is None or count < 0:
+        findings.append(
+            error(
+                f"Component {key} has a hand count of '{block.get('count')}', "
+                "which is not a number of units.",
+                block.loc_of("count"),
+                fix="Write 'count:' as a whole number, for example 'count: 4000'.",
+            )
+        )
+        return None
+    if counted_on is None:
+        findings.append(
+            error(
+                f"Component {key} has a hand count but no usable date for it.",
+                block.loc_of("counted_on"),
+                fix="Write 'counted_on: 2026-08-26' — the day the shelf was counted.",
+            )
+        )
+        return None
+    return ManualStock(count=count, counted_on=counted_on, loc=block.loc)
+
+
 def load_entity(paths: ConfigPaths, entity_id: str) -> EntityConfig:
     path = paths.entity_file(entity_id)
     if not path.exists():
@@ -125,6 +187,7 @@ def load_entity(paths: ConfigPaths, entity_id: str) -> EntityConfig:
             key=str(item.get("key", item["name"])),
             fulfillment=str(item.get("fulfillment", "merchant")),
             has_history=bool(item.get("has_history", True)),
+            veeqo_channel=_str_or_none(item.get("veeqo_channel")),
         )
         for item in _require_list(raw.get("channels", []), "channels", raw.loc_of("channels"))
     )
@@ -280,6 +343,17 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
                     fix="Delete one of the two entries.",
                 )
             )
+        stock_source = str(entry.get("stock_source", STOCK_SOURCE_VEEQO))
+        if stock_source not in STOCK_SOURCES:
+            findings.append(
+                error(
+                    f"Component {component_key} says its stock comes from "
+                    f"'{stock_source}', which Shannon does not know how to read.",
+                    entry.loc_of("stock_source"),
+                    fix="Use one of: " + ", ".join(STOCK_SOURCES) + ".",
+                )
+            )
+            stock_source = STOCK_SOURCE_VEEQO
         internal_reference = bool(entry.get("part_is_internal_reference", False))
         # A component whose part number is ours cannot fall back to it as a
         # name: that is exactly the mistake that would put an invented SKU on
@@ -296,6 +370,9 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
             moq_increment=_int_or_none(entry.get("moq_increment")) or 0,
             reorder_point=_int_or_none(entry.get("reorder_point")),
             reorder_target=_int_or_none(entry.get("reorder_target")),
+            reorder_quantity=_int_or_none(entry.get("reorder_quantity")),
+            stock_source=stock_source,
+            manual_stock=_manual_stock(entry, component_key, findings),
             purchase_asin=_str_or_none(entry.get("purchase_asin"))
             or (component_key.part if component_key.supplier == "amazon_business" else None),
             sales_asin=_str_or_none(entry.get("sales_asin")),
@@ -487,10 +564,14 @@ def load_shannon(path: Path) -> ShannonConfig:
         for name, value in groups_block.items()
     )
 
+    reports_block = _require_map(raw.get("reports", YamlMap()), "reports", raw.loc_of("reports"))
+    report_roles = tuple(str(role) for role in reports_block.get("email_to", []))
+
     return ShannonConfig(
         from_name=str(identity.get("from_name", "Shannon")),
         from_address=str(identity.get("from_address", "")),
         recipients=recipients,
+        report_email_roles=report_roles,
         parameters=parameters,
         ops_reminder_cadence_weeks=_int_or_none(reminders.get("cadence_weeks")) or 6,
         ops_reminder_groups=groups,
@@ -555,6 +636,9 @@ def load_policy(global_path: Path, entity_path: Path | None) -> PolicyConfig:
         rules=rules,
         thresholds=thresholds,
         escalations=tuple(dict(item) for item in raw.get("escalations", [])),
+        accepted_irreversible=tuple(
+            str(action) for action in raw.get("accepted_irreversible_actions", [])
+        ),
     )
 
 

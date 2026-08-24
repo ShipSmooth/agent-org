@@ -10,10 +10,18 @@ that gets drawn. Every test here holds one section to its own wording.
 from __future__ import annotations
 
 import re
+import shutil
+from datetime import date
+from pathlib import Path
 
 import pytest
 
+from agent_org.config.loader import load_config
+from agent_org.integrations.reads import StockPosition
+from agent_org.shannon.calculator import ReplenishmentCalculator, Sufficiency
 from tests.test_end_to_end_run import live_config_report  # noqa: F401
+
+REPO = Path(__file__).resolve().parents[1]
 
 ORCA_COYOTE = "ORCA-MOLLE-EMT-COYOTE"
 COVERED = "Covered — stock meets the demand calculated for it:"
@@ -40,9 +48,11 @@ def test_a_zero_stock_build_blocker_is_never_called_covered(
 ) -> None:
     """The Orca pouch from Zach's first run, exactly.
 
-    It is at zero, and the build section says a colourway cannot be
-    assembled without it. Whatever else the arithmetic concludes, no
-    wording anywhere may present it as fine.
+    It is at zero and a colourway cannot be assembled without it. In Phase
+    1 it had no threshold, so the arithmetic said nothing and the pouch
+    could only be shouted about; now it is a hand-counted zero against a
+    reorder point of 20, so it is on the order list with a quantity. Either
+    way, no wording anywhere may present it as fine.
     """
     assert ORCA_COYOTE in live_config_report
     assert "IFAK-CAT-COYOTE" in live_config_report
@@ -51,9 +61,11 @@ def test_a_zero_stock_build_blocker_is_never_called_covered(
     assert ORCA_COYOTE not in covered
     assert "Coyote" not in covered
 
-    blocked = _section(quiet, BLOCKING)
-    assert ORCA_COYOTE in blocked
-    assert "IFAK-CAT-COYOTE cannot be assembled without it" in blocked
+    ordering = live_config_report.split("WHAT TO ORDER", 1)[1].split(
+        "NOTHING TO ORDER THIS WEEK", 1
+    )[0]
+    assert ORCA_COYOTE in ordering
+    assert "below the reorder point of 20 — buy 100" in ordering
     # And the word itself appears nowhere on that part's lines.
     for line in live_config_report.splitlines():
         if ORCA_COYOTE in line:
@@ -86,12 +98,56 @@ def test_a_covered_line_shows_the_three_figures_that_make_up_its_total(
     assert "on hand 54, on order 150, in transit 60" in body
 
 
-def test_a_part_with_no_threshold_is_reported_as_unassessable(quiet: str) -> None:
-    """A reorder-point part with no reorder point has no line to be below.
-    Twelve of them used to sit silently under "covered"."""
-    section = _section(quiet, CANNOT_ASSESS)
-    assert "no reorder point is set" in section
-    assert "nothing to judge it against" in section
+def test_nothing_is_left_that_cannot_be_assessed(
+    live_config_report: str,  # noqa: F811
+) -> None:
+    """The bucket Phase 1 built is now empty, and that is a fact about the
+    configuration, not about the code.
+
+    Twelve reorder-point parts had no reorder point and sat silently under
+    "covered" until Phase 1 pulled them out into their own section. Zach
+    has since given all of them thresholds and order quantities, so the
+    section has nothing to hold and is not printed. The wording itself is
+    still tested, against a part deliberately left without a threshold, in
+    test_a_part_without_a_threshold_still_says_so.
+    """
+    assert CANNOT_ASSESS not in live_config_report
+    assert "nothing to judge it against" not in live_config_report
+
+
+def test_a_part_without_a_threshold_still_says_so(tmp_path: Path) -> None:
+    """The section is empty today, and the code that fills it is not gone.
+
+    A reorder-point part whose threshold is taken away has no level to be
+    below, and must be pulled out of "covered" again the moment one goes
+    missing — which is how the twelve were found in the first place.
+    """
+    root = tmp_path / "config"
+    shutil.copytree(REPO / "config", root)
+    boms = root / "ithrive" / "boms.yaml"
+    text = boms.read_text(encoding="utf-8")
+    boms.write_text(
+        text.replace("reorder_point: 200, reorder_target: 700", "reorder_point: null", 1),
+        encoding="utf-8",
+    )
+    config, _ = load_config(root, "ithrive")
+    result = ReplenishmentCalculator(
+        config=config,
+        # Stocked, so nothing else has an opinion about it: without a
+        # threshold, "380 on the shelf" is a number with nothing to
+        # compare it to, and saying "covered" would be an assertion.
+        stock={
+            "B01I9L2MXO": StockPosition(sku="B01I9L2MXO", warehouse_available=380, fba_sellable=0)
+        },
+        velocity={},
+        inbound={},
+        on_order={},
+        today=date(2026, 9, 16),
+    ).calculate()
+    plan = result.component("amazon_business", "B01I9L2MXO")
+    assert plan.sufficiency is Sufficiency.CANNOT_ASSESS
+    assert "no reorder point is set" in plan.sufficiency_reason
+    assert "nothing to judge it against" in plan.sufficiency_reason
 
 
 def test_a_line_with_no_demand_says_why_it_had_none(quiet: str) -> None:

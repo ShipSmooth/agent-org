@@ -91,6 +91,10 @@ def entity_id(owner_conn: psycopg.Connection[tuple[object, ...]], app_dsn: str) 
         # would otherwise be claimed by this one.
         cur.execute("DELETE FROM audit_log WHERE entity_id = 'ithrive'")
         cur.execute("DELETE FROM action_proposals WHERE entity_id = 'ithrive'")
+        # Both of these point at reports, and reports are never deleted in
+        # earnest — only here, to give each test an empty ledger.
+        cur.execute("DELETE FROM report_emails WHERE entity_id = 'ithrive'")
+        cur.execute("DELETE FROM manual_stock_proposals WHERE entity_id = 'ithrive'")
         cur.execute("DELETE FROM reports WHERE entity_id = 'ithrive'")
         cur.execute("DELETE FROM tasks WHERE entity_id = 'ithrive'")
     owner_conn.commit()

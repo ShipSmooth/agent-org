@@ -4,36 +4,47 @@ The order of events matters and is fixed here:
 
 1. Validate the configuration. A run on a broken BOM is worse than no run.
 2. Read stock, velocity, inbound and outstanding orders. Any source that
-   cannot be read cleanly stops the run — no partial arithmetic.
+   cannot be read cleanly stops the run — no partial arithmetic, and never
+   a zero standing in for a number nobody could read.
 3. Calculate.
 4. Render the report and file it as a proposal with the ActionBroker.
+5. Once that has committed, ask the broker to email it. Separate step,
+   separate record: a report that is written but not delivered is a
+   different thing from a week that never ran, and both are visible.
 
-Shannon never writes the file herself. She asks; the broker decides; an
-executor writes. That is the same doorway a cart or an email will go
-through later, so nothing about this run has to change when they arrive.
+Shannon never writes the file or sends the mail herself. She asks; the
+broker decides; an executor acts. There is still no executor that can
+reach a supplier.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from fractions import Fraction
 
 from agent_org.broker.broker import ActionBroker, BrokerOutcome
 from agent_org.config.errors import ConfigError, Severity
-from agent_org.config.models import LoadedConfig
+from agent_org.config.models import ComponentKey, LoadedConfig
 from agent_org.config.validate import ValidationResult, validate
 from agent_org.integrations.reads import (
     HistoricalVelocityReader,
     InventoryReader,
     OrderSignalReader,
 )
-from agent_org.shannon.calculator import ReplenishmentCalculator, ReplenishmentResult
+from agent_org.notify.email import subject_line
+from agent_org.shannon.calculator import (
+    ManualProposal,
+    ReplenishmentCalculator,
+    ReplenishmentResult,
+)
 from agent_org.shannon.config_diff import ConfigSnapshot, describe_changes
 from agent_org.shannon.report import ReportContext, render
 from agent_org.tasks.budget import Budget
 
 ACTION_WRITE_REPORT = "internal.write_draft_report"
+ACTION_EMAIL_REPORT = "internal.email_report_to_owner"
 
 
 @dataclass(frozen=True)
@@ -44,6 +55,21 @@ class RunOutcome:
     snapshot: ConfigSnapshot
     broker_outcome: BrokerOutcome | None
     filename: str
+
+    @property
+    def report_id(self) -> str | None:
+        if self.broker_outcome is None:
+            return None
+        value = self.broker_outcome.result.get("report_id")
+        return str(value) if value else None
+
+    @property
+    def lines_needing_an_order(self) -> int:
+        return sum(1 for plan in self.result.components if plan.order_units > 0)
+
+    @property
+    def blocked_lines(self) -> int:
+        return len(self.validation.line_errors)
 
 
 class Shannon:
@@ -60,11 +86,17 @@ class Shannon:
         broker: ActionBroker | None = None,
         budget: Budget | None = None,
         now: datetime | None = None,
+        manual_proposals: Mapping[ComponentKey, ManualProposal] | None = None,
     ) -> None:
         self.config = config
         self.inventory = inventory
         self.orders = orders
         self.broker = broker
+        # What was already proposed against each hand count, read back from
+        # the database. Without it every hand-counted part would be proposed
+        # again every Monday, because a shelf count does not fall when the
+        # shelf does.
+        self.manual_proposals = dict(manual_proposals or {})
         self.now = now or datetime.now(UTC)
         params = config.shannon.parameters
         self.budget = budget or Budget(
@@ -85,7 +117,11 @@ class Shannon:
         broker, which honours it for writing a report and ignores it for
         anything with an effect outside this machine.
         """
-        validation = validate(self.config, self.config.findings)
+        # Checked against the day being run, not against the clock: a week
+        # re-run later must see the configuration as it was judged then,
+        # and "that count is dated in the future" has to mean the future of
+        # the run.
+        validation = validate(self.config, self.config.findings, today=self.now.date())
         self.budget.step("checking the configuration")
         if validation.blocking_errors:
             raise ConfigError(list(validation.blocking_errors))
@@ -111,6 +147,8 @@ class Shannon:
             inbound=inbound,
             on_order=signals.on_order,
             historical_velocity=history,
+            manual_proposals=self.manual_proposals,
+            today=self.now.date(),
         ).calculate()
         self.budget.step("working out what to order")
 
@@ -150,6 +188,7 @@ class Shannon:
                     "config_digest": snapshot.digest,
                     "parameters": snapshot.as_dict(),
                     "lines": _report_lines(result),
+                    "manual_proposals": _manual_proposals(result),
                 },
                 task_id=task_id,
                 schedule_slot=schedule_slot,
@@ -165,6 +204,60 @@ class Shannon:
             broker_outcome=outcome,
             filename=filename,
         )
+
+
+def email_the_report(
+    broker: ActionBroker,
+    config: LoadedConfig,
+    outcome: RunOutcome,
+    task_id: str,
+    schedule_slot: str,
+    week: str,
+    attempt_salt: str = "",
+) -> BrokerOutcome | None:
+    """Hand the written report to the people configuration names.
+
+    Deliberately not a method on Shannon and deliberately not part of
+    `run()`: it happens after the report has committed to the database and
+    landed on disk, in a transaction of its own, so a mail server having a
+    bad minute loses the delivery and nothing else. The addresses come from
+    roles in this entity's own config; there is none in this file.
+    """
+    report_id = outcome.report_id
+    if report_id is None:
+        return None
+    recipients = config.shannon.report_email_addresses()
+    subject = subject_line(
+        week=week,
+        lines_needing_an_order=outcome.lines_needing_an_order,
+        blocked=outcome.blocked_lines,
+    )
+    return broker.submit(
+        action_type=ACTION_EMAIL_REPORT,
+        payload={
+            "report_id": report_id,
+            "recipients": list(recipients),
+            "subject": subject,
+        },
+        task_id=task_id,
+        schedule_slot=schedule_slot,
+        attempt_salt=attempt_salt,
+    )
+
+
+def _manual_proposals(result: ReplenishmentResult) -> list[dict[str, str | int]]:
+    """This run's proposals against hand counts, for the next run to see."""
+    return [
+        {
+            "supplier": proposal.key.supplier,
+            "part": proposal.key.part,
+            "counted_on": proposal.counted_on.isoformat(),
+            "count": proposal.count,
+            "units": proposal.units,
+            "proposed_on": proposal.proposed_on.isoformat(),
+        }
+        for proposal in result.manual_proposals
+    ]
 
 
 def _report_lines(result: ReplenishmentResult) -> list[dict[str, str | int | None]]:
@@ -195,4 +288,10 @@ def _exact(value: Fraction) -> str:
     return str(value.numerator) if value.denominator == 1 else f"{float(value):.4f}"
 
 
-__all__ = ["ACTION_WRITE_REPORT", "RunOutcome", "Shannon"]
+__all__ = [
+    "ACTION_EMAIL_REPORT",
+    "ACTION_WRITE_REPORT",
+    "RunOutcome",
+    "Shannon",
+    "email_the_report",
+]

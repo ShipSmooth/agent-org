@@ -77,11 +77,19 @@ def test_ninety_days_of_sales_becomes_an_exact_weekly_rate(
     veeqo: VeeqoFixtureClient,
 ) -> None:
     """540 in 90 days is 42 a week exactly — kept as a fraction, because
-    rounding here compounds through every kit that uses the part."""
-    velocity = veeqo.read_velocity(90)["B00CAT0002"]  # the CAT's sales ASIN
-    assert velocity.window_days == 90
-    assert velocity.units_sold == 540
-    assert velocity.weekly() == Fraction(42)
+    rounding here compounds through every kit that uses the part.
+
+    Sales are keyed on Zach's channel SKUs, never on the ASIN, so the 540
+    is the sum of the black C-A-T's two listings: 300 on Amazon merchant
+    fulfilled and 240 on Shopify.
+    """
+    velocity = veeqo.read_velocity(90)
+    assert "B00CAT0002" not in velocity, "the ASIN is metadata, never a key"
+    merchant = velocity["CAT7-BLACK-FBM"]
+    shop = velocity["CAT7-BLACK-SHOP"]
+    assert merchant.window_days == 90
+    assert merchant.units_sold + shop.units_sold == 540
+    assert (merchant.weekly() + shop.weekly()) == Fraction(42)
 
 
 def test_stock_comes_from_veeqo_alone_and_never_from_shopify() -> None:

@@ -10,7 +10,18 @@
 #
 # Identity of every component is (supplier, part). Never a bare part number.
 
-bom_version: 2026-08-25
+bom_version: 2026-08-26
+#
+# STOCK SOURCE. `stock_source` defaults to `veeqo`. Eleven components are not in
+# Veeqo at all — Zach counts them on a shelf — and they carry `stock_source: manual`
+# with a `manual_stock: {count, counted_on}` block. Veeqo is never asked about those
+# eleven, and its silence about them is not a zero. The counts used to live in
+# `on_hand_note` strings; they are real fields now, because a number that decides
+# whether money is spent must not sit in a comment where nothing can read it.
+#
+# REORDER QUANTITY. `reorder_quantity` is what Zach actually said: "when I get to
+# 200, order 1,000". `reorder_target` is the other instruction — top up TO a level.
+# A component sets one or the other, never both, and validate-config enforces that.
 
 # ---------------------------------------------------------------------------
 # SUPPLIERS — capability decides how a line can be acquired, never hardcoded
@@ -317,7 +328,9 @@ components:
   # ---- Amazon Business: kit components -------------------------------------
   - {supplier: amazon_business, part: "B0BR7XPNXW", name: "Trauma Shears",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: TODO, reorder_target: TODO,
+     reorder_point: 200, reorder_quantity: 1000,
+     stock_source: manual,
+     manual_stock: {count: 400, counted_on: 2026-08-26},
      note: "NOT a NAR part. Previously mis-attributed to ZZ-0063/ZZ-0064."}
   - {supplier: amazon_business, part: "B0FC56RYZ3", name: "Nitrile Gloves, Blue, Large",
      class: reorder_point, units_per_purchase_unit: null,
@@ -335,15 +348,19 @@ components:
      reorder_point: 200, reorder_target: 700}
   - {supplier: amazon_business, part: "B08LKC2DFY", name: "Zip tie",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: TODO, reorder_target: TODO,
+     reorder_point: 200, reorder_quantity: 2000,
+     stock_source: manual,
+     manual_stock: {count: 300, counted_on: 2026-08-26},
      note: "Express kit only. Consumed on every channel."}
   - supplier: amazon_business
     part: "B096LMW9YX"
     name: "Bag for glove roll"
     class: reorder_point
     units_per_purchase_unit: null
-    reorder_point: TODO
-    reorder_target: TODO
+    reorder_point: 200
+    reorder_quantity: 1500
+    stock_source: manual
+    manual_stock: {count: 300, counted_on: 2026-08-26}
     note: >
       RESOLVED 21 Aug 2026 (Zach): a glove-roll holds two gloves, i.e. one pair.
       So the bag quantity in a kit equals the number of glove PAIRS in that kit —
@@ -352,23 +369,32 @@ components:
 
   # ---- Amazon Business: FBA prep, channel-conditional -----------------------
   # These are consumed at PREP time for units routed to FBA. They are not consumed
-  # on FBM or Shopify orders. See channels: [fba] on the BOM lines below, and the
+  # on FBM or Shopify orders. See channels: [amazon_fba] on the BOM lines below, and the
   # standalone_fba_prep block for components sold on their own.
   - {supplier: amazon_business, part: "B0D9GSKGY5", name: "Blue dot label",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: TODO, reorder_target: TODO,
+     reorder_point: 1000, reorder_quantity: 5000,
+     stock_source: manual,
+     manual_stock: {count: 4000, counted_on: 2026-08-26},
      note: "One per HyFin pack sent to FBA."}
   - {supplier: amazon_business, part: "B0BSX91NB9", name: "FBA bag with suffocation warning (small)",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: TODO, reorder_target: TODO,
+     reorder_point: 100, reorder_quantity: 1000,
+     stock_source: manual,
+     manual_stock: {count: 300, counted_on: 2026-08-26},
      note: "One per triangular bandage or C-A-T holder shipped FBA."}
   - {supplier: amazon_business, part: "B07X6QZ53J", name: "FBA bag with suffocation warning (large)",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: TODO, reorder_target: TODO,
+     reorder_point: 200, reorder_quantity: 1500,
+     stock_source: manual,
+     manual_stock: {count: 300, counted_on: 2026-08-26},
      note: "One per kit and per NAR litter shipped FBA."}
   - {supplier: amazon_business, part: "B0756SVPMF", name: "FBA item labels, 30 per sheet",
      class: reorder_point, units_per_purchase_unit: 30,
-     reorder_point: TODO, reorder_target: TODO}
+     reorder_point: 1000, reorder_quantity: 10000,
+     stock_source: manual,
+     manual_stock: {count: 5000, counted_on: 2026-08-26},
+     note: "Counted in labels, bought in sheets of 30."}
 
   # ---- Amazon Business: ops consumables — never counted, reminder only ------
   - {supplier: amazon_business, part: "B075H3DKLR", name: "Corrugated box 10x10x10",
@@ -414,30 +440,38 @@ components:
      reorder_point: 200, reorder_target: 1500}
   - {supplier: world_richman, part: "IFAK-CAT-BLACK-bag", name: "MOLLE pouch, Black",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: TODO, reorder_target: TODO, on_hand_note: "~2,000"}
+     reorder_point: 300, reorder_quantity: 1000,
+     stock_source: manual,
+     manual_stock: {count: 2000, counted_on: 2026-08-26},
+     note: "Count is Zach's approximation ('~2,000'), restated 26 Aug 2026 — see PL-10."}
   - {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", name: "MOLLE pouch, Green",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: TODO, reorder_target: TODO, on_hand_note: "~4,750"}
+     reorder_point: 100, reorder_quantity: 500,
+     stock_source: manual,
+     manual_stock: {count: 4750, counted_on: 2026-08-26},
+     note: "Count is Zach's approximation ('~4,750'), restated 26 Aug 2026 — see PL-10."}
   - supplier: orca_tactical
     part: "ORCA-MOLLE-EMT-COYOTE"
     part_is_internal_reference: true
     name: "Orca Tactical MOLLE EMT Medical First Aid Pouch — Coyote"
     class: reorder_point
     units_per_purchase_unit: null
-    reorder_point: TODO
-    reorder_target: TODO
-    on_hand_note: "ZERO — kit cannot be built"
-    note: "Order by product name; Orca has no item numbers."
+    reorder_point: 20
+    reorder_quantity: 100
+    stock_source: manual
+    manual_stock: {count: 0, counted_on: 2026-08-26}
+    note: "Order by product name; Orca has no item numbers. None on the shelf: the kit cannot be built."
   - supplier: orca_tactical
     part: "ORCA-MOLLE-EMT-MULTICAM"
     part_is_internal_reference: true
     name: "Orca Tactical MOLLE EMT Medical First Aid Pouch — MULTI CAM"
     class: reorder_point
     units_per_purchase_unit: null
-    reorder_point: TODO
-    reorder_target: TODO
-    on_hand_note: "ZERO — kit cannot be built"
-    note: "Order by product name; Orca has no item numbers."
+    reorder_point: 20
+    reorder_quantity: 100
+    stock_source: manual
+    manual_stock: {count: 0, counted_on: 2026-08-26}
+    note: "Order by product name; Orca has no item numbers. None on the shelf: the kit cannot be built."
   - {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", name: "Slim MOLLE belt carrier",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 200, reorder_target: 500}
@@ -475,14 +509,21 @@ components:
 # `aliases` are the SKUs VEEQO counts stock under, one per channel. They are NOT
 # Amazon's SKUs: Amazon holds its own auto-generated strings, and those live in
 # config/ithrive/listings.yaml, which is the single authority on Amazon identity
-# and on whether a listing is live. The `fba: TODO` placeholders that used to sit
-# here were removed on 24 Aug 2026 when listings.yaml resolved PL-8 — keeping them
-# would have meant two files claiming the same fact and eventually disagreeing.
+# and on whether a listing is live. The `amazon_fba: TODO` placeholders that used
+# to sit here were removed on 24 Aug 2026 when listings.yaml resolved PL-8 — keeping
+# them would have meant two files claiming the same fact and eventually disagreeing.
+# They have NOT come back: the 26 Aug worksheet still carried them, and they were
+# dropped again on load rather than reinstated.
+#
+# The channel key was `fbm` until 26 Aug 2026 and is now `amazon_fbm`. `fbm` is also
+# one of Zach's own Veeqo SKU suffixes, and a key that means two things is a mix-up
+# waiting for live data. `fba` became `amazon_fba` in the same pass so that one
+# channel has exactly one name. The keys are defined in config/entities/ithrive.yaml.
 kits:
 
   "20-314":
     name: Essential Bleeding Control Trauma Kit — Mobile
-    aliases: {fbm: "20-314", shopify: "20-314"}
+    aliases: {amazon_fbm: "20-314", shopify: "20-314"}
     components:
       - {supplier: nar, part: "30-0023", qty: 1}
       - {supplier: nar, part: "10-0042", qty: 1}          # one twin pack, per B5
@@ -493,11 +534,11 @@ kits:
       - {supplier: amazon_business, part: "B0BG6ZSVGN", qty: 1}
       - {supplier: own_printed, part: "CARD-ESSENTIAL-EXPRESS", qty: 1}
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
 
   "20-315":
     name: Essential Bleeding Control Trauma Kit — Wall Mounted
-    aliases: {fbm: "20-315", shopify: "20-315"}
+    aliases: {amazon_fbm: "20-315", shopify: "20-315"}
     components:
       - {supplier: nar, part: "30-0023", qty: 1}
       - {supplier: nar, part: "10-0042", qty: 1}
@@ -509,11 +550,11 @@ kits:
       - {supplier: own_printed, part: "CARD-ESSENTIAL-EXPRESS", qty: 1}
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
       - {supplier: internal, part: WALL-MOUNT, qty: 1}            # non_stocked
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
 
   "25-001":
     name: Express Bleeding Control Kit
-    aliases: {fbm: "25-001", shopify: "25-001"}
+    aliases: {amazon_fbm: "25-001", shopify: "25-001"}
     note: "Wall-mounted sibling is 25-002."
     components:
       - {supplier: nar, part: "30-0023", qty: 1}
@@ -526,11 +567,11 @@ kits:
       - {supplier: world_richman, part: "25-001-bag", qty: 1}
       - {supplier: amazon_business, part: "B08LKC2DFY", qty: 1}   # zip tie, Express only
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
 
   "25-002":
     name: Express Bleeding Control Kit — Wall Mounted
-    aliases: {fbm: "25-002", shopify: "25-002"}
+    aliases: {amazon_fbm: "25-002", shopify: "25-002"}
     components:
       - {supplier: nar, part: "30-0023", qty: 1}
       - {supplier: amazon_business, part: "B0FC56RYZ3", qty: 2}
@@ -543,11 +584,11 @@ kits:
       - {supplier: internal, part: WALL-MOUNT, qty: 1}            # non_stocked
       - {supplier: amazon_business, part: "B08LKC2DFY", qty: 1}   # zip tie, Express only
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
 
   "25-010":
     name: Basic Bleeding Control Kit — C-A-T
-    aliases: {fbm: "25-010", shopify: "25-010"}
+    aliases: {amazon_fbm: "25-010", shopify: "25-010"}
     components:
       - {supplier: nar, part: "30-0023", qty: 1}          # orange, per B2
       - {supplier: amazon_business, part: "B0FC56RYZ3", qty: 2}
@@ -558,11 +599,11 @@ kits:
       - {supplier: own_printed, part: "CARD-BASIC-CAT", qty: 1}
       - {supplier: amazon_business, part: "B01I9L2MXO", qty: 1}
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
 
   "26-001":
     name: Basic Bleeding Control Kit — C-A-T (Red Bag)
-    aliases: {fbm: "26-001", shopify: "26-001"}
+    aliases: {amazon_fbm: "26-001", shopify: "26-001"}
     components:
       - {supplier: nar, part: "30-0023", qty: 1}          # orange, per B3
       - {supplier: nar, part: "30-0168", qty: 1}          # 6in ETD
@@ -574,11 +615,11 @@ kits:
       - {supplier: own_printed, part: "CARD-REDBAG", qty: 1}
       - {supplier: world_richman, part: "26-001-bag", qty: 1}
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
 
   "26-002":
     name: Basic Bleeding Control Kit — SAM XT
-    aliases: {fbm: "26-002", shopify: "26-002"}
+    aliases: {amazon_fbm: "26-002", shopify: "26-002"}
     components:
       - {supplier: sam_medical, part: "XT600-OR-EN", qty: 1}     # orange metal, per B4
       - {supplier: amazon_business, part: "B0FC56RYZ3", qty: 2}
@@ -589,7 +630,7 @@ kits:
       - {supplier: own_printed, part: "CARD-BASIC-SAMXT", qty: 1}
       - {supplier: amazon_business, part: "B01I9L2MXO", qty: 1}
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 2}   # 1 per glove pair
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
 
   # The four colourways are one product family: they are forecast together,
   # built together and shipped to FBA in one shipment (docs/replenishment.md §10).
@@ -598,7 +639,7 @@ kits:
     name: IFAK with CAT Gen 7 & HyFin — Black
     family: IFAK-CAT
     family_name: IFAK with CAT Gen 7 & HyFin (all colourways)
-    aliases: {fbm: IFAK-CAT-BLACK, shopify: IFAK-CAT-BLACK}
+    aliases: {amazon_fbm: IFAK-CAT-BLACK, shopify: IFAK-CAT-BLACK}
     components: &ifak_common
       - {supplier: nar, part: "30-0001", qty: 1}          # black, per B3
       - {supplier: nar, part: "10-0042", qty: 1}
@@ -611,20 +652,20 @@ kits:
       - {supplier: unsourced, part: GLOVE-BLK-L, qty: 2}
       - {supplier: amazon_business, part: "B0BR7XPNXW", qty: 1}
       - {supplier: amazon_business, part: "B0BBRJYQM5", qty: 1}
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
     pouch: {supplier: world_richman, part: "IFAK-CAT-BLACK-bag", qty: 1}
 
   IFAK-CAT-GREEN:
     name: IFAK with CAT Gen 7 & HyFin — Green
     family: IFAK-CAT
-    aliases: {fbm: IFAK-CAT-GREEN, shopify: IFAK-CAT-GREEN}
+    aliases: {amazon_fbm: IFAK-CAT-GREEN, shopify: IFAK-CAT-GREEN}
     components: *ifak_common
     pouch: {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", qty: 1}
 
   IFAK-CAT-COYOTE:
     name: IFAK with CAT Gen 7 & HyFin — Coyote
     family: IFAK-CAT
-    aliases: {fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
+    aliases: {amazon_fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
     components: *ifak_common
     pouch: {supplier: orca_tactical, part: "ORCA-MOLLE-EMT-COYOTE", qty: 1}
     build_blocked: "Pouch stock is zero — this colourway cannot be assembled."
@@ -632,14 +673,14 @@ kits:
   IFAK-CAT-MULTICAM:
     name: IFAK with CAT Gen 7 & HyFin — Multicam
     family: IFAK-CAT
-    aliases: {fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
+    aliases: {amazon_fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
     components: *ifak_common
     pouch: {supplier: orca_tactical, part: "ORCA-MOLLE-EMT-MULTICAM", qty: 1}
     build_blocked: "Pouch stock is zero — this colourway cannot be assembled."
 
   IFAK-CAT-COMPACT:
     name: Compact IFAK Trauma Kit
-    aliases: {fbm: IFAK-CAT-COMPACT, shopify: TODO}
+    aliases: {amazon_fbm: IFAK-CAT-COMPACT, shopify: TODO}
     note: "Black only. SKU assigned 20 Aug 2026; must be mirrored into Veeqo, Shopify, Amazon."
     components:
       - {supplier: nar, part: "30-0001", qty: 1}
@@ -649,7 +690,7 @@ kits:
       - {supplier: unsourced, part: GLOVE-BLK-L, qty: 1}  # 1 pair
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 1}   # 1 per glove pair
       - {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", qty: 1}
-      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [amazon_fba]}
 
 # ---------------------------------------------------------------------------
 # FBA PREP FOR COMPONENTS SOLD STANDALONE
@@ -715,6 +756,36 @@ parking_lot:
       Nothing today. If NAR's real minimum is lower, the first 30-0033 order will be
       larger than it needed to be — the error is in the safe direction, but it is
       real money. Ask NAR, then correct moq_min / moq_increment here.
+
+  - id: PL-10
+    item: "Four hand counts carry a date they were restated on, not a date they were counted on"
+    detail: >
+      The 26 Aug worksheet dated seven of the eleven hand counts explicitly
+      ("400 counted by Zach 2026-08-26"). Four did not: the Black and Green MOLLE
+      pouches came over as approximations ("~2,000", "~4,750") and the two Orca
+      pouches as "ZERO — kit cannot be built". A manual count needs a date, so all
+      four carry counted_on: 2026-08-26 — the day the worksheet restated them. If
+      those numbers are older than that, their age on the report is optimistic, and
+      the two approximate ones are approximate.
+    blocks: >
+      Nothing. Confirm the four counts and their real dates at the next stock take,
+      then correct manual_stock here. Shannon will ask again automatically once any
+      count passes eight weeks.
+
+  - id: PL-11
+    item: "The names Veeqo prints on each sales channel"
+    detail: >
+      Live velocity is split by channel on the channel name Veeqo puts on an order,
+      and nothing on record says how Veeqo spells those names for this account. The
+      five entries in config/entities/ithrive.yaml therefore carry obvious
+      placeholders (TBD-VEEQO-CHANNEL-...) rather than plausible guesses. The first
+      live read names every channel it actually saw, in one sentence; paste those
+      strings in and the split is correct from then on.
+    blocks: >
+      The first live Veeqo run. Shannon stops instead of deciding for herself
+      whether a channel's sales are FBA or merchant-fulfilled, because that answer
+      is what sends stock to Amazon. Component totals and the reorder-point lines
+      are unaffected by the split; the FBA/merchant allocation is.
 
   # PL-8 RESOLVED — see the note on PL-4 above
   - id: PL-8

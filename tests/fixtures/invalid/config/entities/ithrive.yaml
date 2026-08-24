@@ -15,11 +15,11 @@ agents:
 
 channels:
   - name: amazon_fba
-    key: fba
+    key: amazon_fba
     fulfillment: fba
     has_history: true
   - name: amazon_fbm
-    key: fbm
+    key: amazon_fbm
     fulfillment: merchant
     has_history: true
   - name: shopify

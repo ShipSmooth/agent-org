@@ -552,10 +552,13 @@ parking_lot:
       quote ~10 business days.
     blocks: "Nothing — retained for the record"
 
+  # PL-8 RESOLVED — kept below for the record
   - id: PL-8
-    item: "Pull FBA alias SKUs and sales ASINs from Seller Central"
+    item: "Amazon channel SKUs and sales ASINs (resolved)"
     detail: >
-      Every `aliases.fba` is TODO and no `sales_asin` is populated. Shannon needs
-      the sales ASIN to read standalone velocity; the FBA alias joins each kit's
-      FBA simple product to its recipe.
-    blocks: "The first live run against real Veeqo and Amazon data"
+      RESOLVED 24 Aug 2026 by config/ithrive/listings.yaml. Velocity now joins on
+      Amazon's own channel SKUs, summed across every SKU mapped to a component;
+      the sales ASIN is description only, because three C-A-T colourways share
+      ASINs that NAR owns and controls. 20-314, 20-315 and 25-002 have no Amazon
+      listing at all, which is a fact rather than a gap.
+    blocks: "Nothing — retained for the record"

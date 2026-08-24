@@ -36,7 +36,7 @@ suppliers:
     lead_time_weeks: 2           # ~14 calendar days (Zach, 21 Aug 2026)
   orca_tactical:
     capabilities: [report_only]
-    lead_time_weeks: null        # PL-1 — Zach to provide
+    lead_time_weeks: 2           # ~10 calendar days (Zach, 24 Aug 2026)
   own_printed:
     capabilities: [report_only]
     lead_time_weeks: 2           # ~10 business days, both printers

@@ -77,7 +77,14 @@ class Shannon:
         task_id: str,
         schedule_slot: str,
         previous_snapshot: ConfigSnapshot | None = None,
+        attempt_salt: str = "",
     ) -> RunOutcome:
+        """Read, calculate, report.
+
+        `attempt_salt` marks a deliberate repeat of a week. It reaches the
+        broker, which honours it for writing a report and ignores it for
+        anything with an effect outside this machine.
+        """
         validation = validate(self.config, self.config.findings)
         self.budget.step("checking the configuration")
         if validation.blocking_errors:
@@ -146,6 +153,7 @@ class Shannon:
                 },
                 task_id=task_id,
                 schedule_slot=schedule_slot,
+                attempt_salt=attempt_salt,
             )
         self.budget.step("writing the report")
 

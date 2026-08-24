@@ -149,6 +149,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     fixtures=Path(args.fixtures),
                     output_dir=Path(args.output),
                     now=datetime.now(tz=UTC),
+                    again=bool(args.again),
                 )
             conn.commit()
     except ConfigError as exc:
@@ -167,6 +168,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"The run stopped: {summary.error}")
         return EXIT_PROBLEM
     print(f"Report written to {summary.report_path}")
+    if summary.superseded_report_id is not None:
+        # Plainly which run this replaced: two reports for one week is
+        # confusing only when nothing says which is the live one.
+        print(
+            f"This replaces the report written at {summary.superseded_written_at}, "
+            f"now kept as {summary.superseded_path} and marked in the database as "
+            f"superseded (report {summary.superseded_report_id}). Both are kept."
+        )
     print(
         "Nothing was ordered and nothing was sent. Read the report, then place any orders yourself."
     )
@@ -203,26 +212,74 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    validate_cmd = sub.add_parser("validate-config", help="check the configuration and parts list")
-    validate_cmd.add_argument("--verbose", action="store_true")
+    # Every command says in one line what it does and what it touches.
+    # "What it touches" is the part that matters: the difference between a
+    # command that reads files and one that writes to the database should
+    # not have to be learned by running it.
+    validate_cmd = sub.add_parser(
+        "validate-config",
+        help=(
+            "check the configuration and parts list and print what is wrong. "
+            "Reads the config folder only; touches no database and nothing outside "
+            "this machine."
+        ),
+    )
+    validate_cmd.add_argument(
+        "--verbose", action="store_true", help="also list every configuration value read"
+    )
     validate_cmd.set_defaults(func=cmd_validate_config)
 
-    migrate_cmd = sub.add_parser("migrate", help="create or update the database tables")
+    migrate_cmd = sub.add_parser(
+        "migrate",
+        help=(
+            "create or update the database tables, and set Shannon's database "
+            "password from POSTGRES_APP_PASSWORD. Writes to Postgres only."
+        ),
+    )
     migrate_cmd.set_defaults(func=cmd_migrate)
 
-    sync_cmd = sub.add_parser("sync-config", help="copy the configuration into the database")
+    sync_cmd = sub.add_parser(
+        "sync-config",
+        help=(
+            "copy the parts list, suppliers and channels from the config folder "
+            "into Postgres. Reads the config folder, writes to Postgres."
+        ),
+    )
     sync_cmd.set_defaults(func=cmd_sync)
 
-    run_cmd = sub.add_parser("run", help="run this week's replenishment and write a report")
+    run_cmd = sub.add_parser(
+        "run",
+        help=(
+            "work out this week's replenishment and write the report. Reads saved "
+            "Veeqo/Gmail exports, writes a report file and a row in Postgres. "
+            "Orders nothing and sends nothing."
+        ),
+    )
     run_cmd.add_argument(
         "--fixtures",
         default="tests/fixtures/golden/data",
         help="folder of saved Veeqo/Gmail exports to read instead of live accounts",
     )
-    run_cmd.add_argument("--output", default="reports", help="where to write the report")
+    run_cmd.add_argument("--output", default="reports", help="folder to write the report file into")
+    run_cmd.add_argument(
+        "--again",
+        action="store_true",
+        help=(
+            "work this week out afresh even though it has been run. The new report "
+            "replaces the previous one for the week; both are kept in the database "
+            "and the old file is renamed rather than overwritten. It re-reads and "
+            "re-reports only: nothing is re-sent, re-staged, re-ordered or bought."
+        ),
+    )
     run_cmd.set_defaults(func=cmd_run)
 
-    schedule_cmd = sub.add_parser("schedule", help="show what is scheduled and when")
+    schedule_cmd = sub.add_parser(
+        "schedule",
+        help=(
+            "show which runs are due and when. Reads the config folder and the "
+            "clock; changes nothing anywhere."
+        ),
+    )
     schedule_cmd.set_defaults(func=cmd_schedule)
     return parser
 

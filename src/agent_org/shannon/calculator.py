@@ -125,6 +125,10 @@ class KitBuild:
     demand_units: int = 0
     assembled_stock: int = 0
     build_share: int = 0
+    # This colourway's part of the family's FBA send, in proportion to its
+    # own demand (docs/replenishment.md §7). Black outsells green, so black
+    # gets more; the shares always add up to the family figure.
+    fba_send_share: int = 0
 
 
 def _split_build(builds: list[KitBuild], family_build: int) -> list[KitBuild]:
@@ -173,6 +177,39 @@ def _split_build(builds: list[KitBuild], family_build: int) -> list[KitBuild]:
         )
         for item, share in zip(builds, shares, strict=True)
     ]
+
+
+def _split_by_demand(demands: list[int], total: int) -> list[int]:
+    """Divide a whole quantity in proportion to demand, losing nothing.
+
+    This is the stated rule for a family's FBA send: each colourway takes
+    the share its own sales earn it. Whole units are sent, so the exact
+    ratio is rounded down and the units the rounding leaves over go to the
+    colourways it shortchanged most — the shares therefore always sum to
+    `total`, which is what stops a unit appearing or vanishing between the
+    shipment and the prep items packed with it.
+
+    With no demand anywhere there is no ratio to follow, and the whole
+    quantity goes to the first colourway rather than being dropped.
+    """
+    if not demands:
+        return []
+    weight = sum(demands)
+    if weight <= 0 or total <= 0:
+        shares = [0] * len(demands)
+        shares[0] = max(total, 0)
+        return shares
+    shares = [demand * total // weight for demand in demands]
+    order = sorted(range(len(demands)), key=lambda i: -((demands[i] * total) % weight))
+    for index in order[: total - sum(shares)]:
+        shares[index] += 1
+    return shares
+
+
+def _split_send(builds: list[KitBuild], family_send: int) -> list[KitBuild]:
+    """Attach each colourway's share of the family's FBA send to it."""
+    shares = _split_by_demand([item.demand_units for item in builds], family_send)
+    return [replace(item, fba_send_share=share) for item, share in zip(builds, shares, strict=True)]
 
 
 @dataclass(frozen=True)
@@ -660,6 +697,7 @@ class ReplenishmentCalculator:
                 allocation = self._allocate_family(
                     family, weekly_by_channel, warehouse, fba_on_hand, inbound
                 )
+            builds = _split_send(builds, allocation.fba_send if allocation else 0)
 
             if build > buildable_total:
                 short = _short_of(builds)
@@ -761,23 +799,20 @@ class ReplenishmentCalculator:
             for plan in kit_plans
             if plan.allocation is not None and plan.allocation.fba_send > 0
         }
-        family_demand = {
-            plan.family: sum(
-                (kit_demand.get(member.kit_group, Fraction(0)) for member in plan.members),
-                Fraction(0),
-            )
-            for plan in kit_plans
+
+        # A family ships as one shipment, so its send quantity is divided
+        # across colourways in proportion to their demand — the stated rule
+        # in docs/replenishment.md §7, applied once in `_split_send` so the
+        # prep items packed with those units follow the same split.
+        sends = {
+            member.kit_group: member.fba_send_share for plan in kit_plans for member in plan.members
         }
 
         exploded: dict[ComponentKey, Fraction] = {}
         prep: dict[ComponentKey, Fraction] = {}
         for kit_group, kit in self.config.boms.kits.items():
             demand = kit_demand.get(kit_group, Fraction(0))
-            # A family ships as one shipment, so its send quantity is split
-            # across colourways in proportion to their demand.
-            family_total = family_demand.get(kit.family, Fraction(0))
-            share = demand / family_total if family_total else Fraction(0)
-            send = Fraction(fba_send_targets.get(kit.family, 0)) * share
+            send = Fraction(sends.get(kit_group, 0))
             for line in kit.lines:
                 if line.channels is None:
                     exploded[line.component] = (
@@ -962,7 +997,6 @@ class ReplenishmentCalculator:
         plan = replace(plan, blocks_builds=blocks)
         if plan.order_units > 0:
             return plan
-        window = self.params.velocity_window_days
 
         # First, before any other reading: a part that has run out and is
         # holding up an assembly is never described as fine, whatever the
@@ -1006,37 +1040,69 @@ class ReplenishmentCalculator:
                 )
             return replace(plan, sufficiency=Sufficiency.COVERED, sufficiency_reason=reason)
 
-        suppressed_here = next((item for item in suppressed if item.subject == plan.key.part), None)
+        return replace(
+            plan,
+            sufficiency=Sufficiency.NO_DEMAND,
+            sufficiency_reason=(
+                "no demand this period — "
+                + "; and ".join(self._no_demand_reasons(plan, component, suppressed))
+            ),
+        )
+
+    def _no_demand_reasons(
+        self,
+        plan: ComponentPlan,
+        component: Component,
+        suppressed: Sequence[SuppressedDemand],
+    ) -> tuple[str, ...]:
+        """Every reason this line is at zero, not the first one found.
+
+        A part can be at zero for two unrelated reasons at once — it is
+        resold standalone and sold nothing, *and* the kit that consumes it
+        has all its listings down. They call for different actions, and a
+        reader shown only one of them concludes the wrong thing about the
+        other. Both sides are therefore reported: the standalone side
+        first, because it is the side Zach can act on today.
+        """
+        window = self.params.velocity_window_days
+        reasons: list[str] = []
+
+        sold_standalone = any(
+            item.subject == plan.key.part and item.kind == "component" for item in suppressed
+        )
+        if sold_standalone:
+            reasons.append(
+                "every listing for it is inactive, so its sales measure the listing "
+                "rather than the demand — see DEMAND SUPPRESSED below"
+            )
+        elif component.resale_only:
+            reasons.append(f"it is resold as it comes and sold nothing in the last {window} days")
+        elif plan.sales_asins or self.config.listings.for_part(plan.key.part) is not None:
+            # It has a sales side of its own, so "the kits are quiet" is only
+            # half the story: the standalone listing sold nothing either.
+            reasons.append(f"it is also sold standalone and sold nothing in the last {window} days")
+
         used_by = self._kits_using(plan.key)
         suppressed_kits = tuple(
             item.subject for item in suppressed if item.kind == "kit" and item.subject in used_by
         )
-        if suppressed_here is not None:
-            why = (
-                "every listing for it is inactive, so its sales measure the listing "
-                "rather than the demand — see DEMAND SUPPRESSED below"
-            )
-        elif suppressed_kits:
-            why = (
+        quiet_kits = tuple(kit for kit in used_by if kit not in suppressed_kits)
+        if suppressed_kits:
+            reasons.append(
                 "the kits that use it are demand-suppressed ("
                 + ", ".join(suppressed_kits)
                 + "), so no kit demand reached it"
             )
-        elif used_by:
-            why = (
+        if quiet_kits:
+            reasons.append(
                 "the kits that use it ("
-                + ", ".join(used_by)
+                + ", ".join(quiet_kits)
                 + f") sold nothing in the last {window} days"
             )
-        elif component.resale_only:
-            why = f"it is resold as it comes and sold nothing in the last {window} days"
-        else:
-            why = f"no kit consumes it and it sold nothing in the last {window} days"
-        return replace(
-            plan,
-            sufficiency=Sufficiency.NO_DEMAND,
-            sufficiency_reason=f"no demand this period — {why}",
-        )
+
+        if not reasons:
+            reasons.append(f"no kit consumes it and it sold nothing in the last {window} days")
+        return tuple(reasons)
 
     def _component_plan(
         self,

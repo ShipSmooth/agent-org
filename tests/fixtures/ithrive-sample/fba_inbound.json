@@ -1,4 +1,14 @@
 {
-  "_comment": "No FBA aliases are configured yet (PL-8), so nothing is inbound.",
-  "shipments": []
+  "_comment": [
+    "One shipment on its way to Amazon, so 'in transit' is not zero in this",
+    "run. That matters: coverage is on hand + on order + in transit, and",
+    "with every in-transit figure at zero the report could add two of the",
+    "three and still look right. 10-0042 has 54 on hand, 150 on order and",
+    "60 in transit — three different numbers, no two of which sum to the",
+    "same total as all three. It is deliberately not one of the parts in",
+    "the FBA send plan, so the box arithmetic is unaffected."
+  ],
+  "shipments": [
+    {"sku": "10-0042", "units": 60, "expected_at": "2026-05-11T00:00:00+00:00"}
+  ]
 }

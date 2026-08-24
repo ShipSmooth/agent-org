@@ -23,14 +23,39 @@
     {"sku": "IFAK-CAT-COMPACT", "units_sold": 18, "by_channel": {"fbm": 18}},
 
     {"_comment": "Components sold on their own, not inside a kit.",
-     "sku": "30-0001", "units_sold": 180},
-    {"sku": "10-0042", "units_sold": 90},
+     "sku": "10-0042", "units_sold": 90},
     {"sku": "30-0052", "units_sold": 60},
     {"sku": "XT600-OR-EN", "units_sold": 30},
 
-    {"_comment": "Amazon's own SKUs (listings.yaml). 30-0001 sells under two.",
-     "sku": "GK-VQI5-LWIS", "units_sold": 30, "by_channel": {"fba": 30}},
-    {"sku": "5G-AP1S-TUE4", "units_sold": 120, "by_channel": {"fbm": 120}},
-    {"sku": "Q3-MWFF-Y7P4", "units_sold": 60, "by_channel": {"fba": 60}}
+    {"_comment": [
+      "DECOYS. Rows keyed on Zach's OWN part number for the three C-A-T",
+      "colourways, which Amazon does not use and Shannon must never read.",
+      "Every figure here is deliberately WRONG and deliberately unequal to",
+      "the sum of that colourway's channel SKUs below, so a report that",
+      "reads one of these rows is a report with a visibly different number",
+      "in it. Delete these rows and nothing may change; that is the test."
+     ],
+     "sku": "30-0001", "units_sold": 999},
+    {"sku": "30-0023", "units_sold": 4},
+    {"sku": "30-0033", "units_sold": 500},
+
+    {"_comment": [
+      "Amazon's own channel SKUs (listings.yaml cat_gen7_attribution).",
+      "NAR owns the C-A-T listings, three colourways share ASINs and no",
+      "title states a colour, so these SKUs are the ONLY thing keeping",
+      "black, orange and blue apart. Black 138+47=185, orange 53+29+11=93,",
+      "blue 61+24=85: three sums, all different from each other and from",
+      "every decoy above, so no wrong join can produce a right answer."
+     ],
+     "sku": "5G-AP1S-TUE4", "units_sold": 138, "by_channel": {"fbm": 138}},
+    {"sku": "Q3-MWFF-Y7P4", "units_sold": 47, "by_channel": {"fba": 47}},
+    {"sku": "0Z-RQ1G-J36O", "units_sold": 53, "by_channel": {"fba": 53}},
+    {"sku": "RJ-54G8-ZQDY", "units_sold": 29, "by_channel": {"fba": 29}},
+    {"sku": "VR-BODU-ZKN6", "units_sold": 11, "by_channel": {"fbm": 11}},
+    {"sku": "DU-AEBP-B9VE", "units_sold": 61, "by_channel": {"fba": 61}},
+    {"sku": "KV-UTKS-EZMH", "units_sold": 24, "by_channel": {"fbm": 24}},
+
+    {"_comment": "The 25-001 kit's own Amazon SKU.",
+     "sku": "GK-VQI5-LWIS", "units_sold": 30, "by_channel": {"fba": 30}}
   ]
 }

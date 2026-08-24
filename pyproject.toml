@@ -23,6 +23,9 @@ dev = [
     "import-linter==2.3",
 ]
 
+[project.scripts]
+shannon = "agent_org.cli:main"
+
 [build-system]
 requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"

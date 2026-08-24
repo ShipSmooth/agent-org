@@ -1,0 +1,3 @@
+# iThrive Medical policy overrides. May add rules or tighten thresholds;
+# can NEVER lower a global rule's tier (enforced in code).
+rules: []

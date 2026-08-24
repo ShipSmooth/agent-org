@@ -1,0 +1,14 @@
+# Entity: iThrive Medical. One file per LLC; adding an entity is config, not code.
+entity_id: ithrive
+legal_name: ITHRIVE LLC
+status: active
+timezone: America/New_York
+
+# Sales channels. `key` is the short name BOM `channels:` values and kit
+# aliases use; `fulfillment` drives channel allocation (docs/replenishment.md §7).
+channels:
+  - {key: fba, name: amazon_fba, fulfillment: fba, has_history: true}
+  - {key: fbm, name: amazon_fbm, fulfillment: merchant, has_history: true}
+  - {key: shopify, name: shopify, fulfillment: merchant, has_history: true}
+  - {key: walmart_sf, name: walmart_seller_fulfilled, fulfillment: merchant, has_history: false}
+  - {key: walmart_wfs, name: walmart_wfs, fulfillment: wfs, has_history: false}

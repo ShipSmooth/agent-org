@@ -8,6 +8,31 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16.9
+        env:
+          POSTGRES_DB: agent_org
+          POSTGRES_USER: agent_org_migrator
+          POSTGRES_PASSWORD: ci-not-a-real-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agent_org_migrator -d agent_org"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # A throwaway password for a container that lives for one CI run. No
+      # production credential ever enters CI; every client is tested against
+      # fixtures, never a live account.
+      POSTGRES_PASSWORD: ci-not-a-real-password
+      APP_DB_PASSWORD: ci-not-a-real-password
+      TEST_DATABASE_URL: postgresql://agent_org_migrator:ci-not-a-real-password@localhost:5432/agent_org
+      TEST_APP_DATABASE_URL: postgresql://agent_org_app:ci-not-a-real-password@localhost:5432/agent_org
+
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

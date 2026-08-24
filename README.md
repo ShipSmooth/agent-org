@@ -6,9 +6,14 @@ everything else runs unattended. v1 ships one agent: **Shannon**, who
 handles inventory replenishment for iThrive Medical — she stages a NAR
 cart and writes a report. She never purchases.
 
-**This repository currently contains Phase 0 only: the architecture
-specification, a package skeleton, and tooling. There is no application
-code yet.**
+**This repository is at Phase 1: the brain, and only the brain.** Shannon
+reads, calculates and writes a report — to a file and to the database. She
+cannot send, buy, browse or change anything anywhere; no code exists for any
+of it. Cart staging, approvals, email and SMS are later phases.
+
+New to the project, or setting up the machine that runs her?
+[FIRST-RUN.md](FIRST-RUN.md) is the non-engineer's guide from bare Windows to
+first report.
 
 ## Read this first
 
@@ -42,9 +47,19 @@ Target host: Windows + Docker Desktop + WSL2. Development uses
 make install      # create venv, install pinned deps
 make lint         # ruff
 make typecheck    # mypy --strict
-make test         # pytest (no tests yet in Phase 0)
+make test         # pytest — database tests skip without TEST_DATABASE_URL
 make check        # all of the above
-docker compose up # postgres skeleton (see docker-compose.yml)
+docker compose up # postgres (see docker-compose.yml)
+```
+
+Shannon's commands:
+
+```bash
+shannon migrate                     # create/upgrade the schema
+shannon validate-config             # every docs/replenishment.md §13 check
+shannon run --config tests/fixtures/golden/config \
+           --fixtures tests/fixtures/golden/data --out reports
+shannon schedule-tick               # enqueue this week's run if it is due
 ```
 
 Credentials come from environment variables only — copy `.env.example` to

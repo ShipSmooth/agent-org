@@ -1,0 +1,14 @@
+{
+  "window_days": 90,
+  "rows": [
+    {"sku": "IFAK-CAT-BLACK", "units_sold_by_channel": {"fbm": "180 / 150"}},
+    {"sku": "IFAK-CAT-GREEN", "units_sold_by_channel": {"fbm": 90}},
+    {"sku": "IFAK-CAT-COYOTE", "units_sold_by_channel": {"fbm": "90 / 80"}},
+    {"sku": "IFAK-CAT-MULTICAM", "units_sold_by_channel": {"fbm": 90}},
+    {"sku": "IFAK-CAT-COMPACT", "units_sold_by_channel": {"fbm": 90}},
+    {"sku": "30-0001", "units_sold_by_channel": {"fbm": "240 / 200", "fba": 300}},
+    {"sku": "10-0042", "units_sold_by_channel": {"shopify": 180, "fba": 90}},
+    {"sku": "HMZ-0001", "units_sold_by_channel": {"shopify": 45}},
+    {"sku": "80-0027", "units_sold_by_channel": {"fbm": 0}}
+  ]
+}

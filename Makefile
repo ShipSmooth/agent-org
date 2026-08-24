@@ -13,8 +13,7 @@ typecheck:
 importcheck:
 	uv run lint-imports
 
-# Phase 0 has no tests yet; pytest exit code 5 (no tests collected) is OK.
 test:
-	uv run pytest || [ $$? -eq 5 ]
+	uv run pytest
 
 check: lint typecheck importcheck test

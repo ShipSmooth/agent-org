@@ -1,0 +1,33 @@
+# Global policy — docs/policy.md. Data, not code. Default-deny:
+# any action matching no rule resolves to the default tier.
+default_tier: 3
+
+rules:
+  # Tier 0 — silent: reads, analysis, drafts. No external effect.
+  - {action: veeqo.read_inventory, tier: 0}
+  - {action: veeqo.read_orders, tier: 0}
+  - {action: veeqo.read_fba_inbound, tier: 0}
+  - {action: shopify.read_products, tier: 0}
+  - {action: gmail.read_order_signals, tier: 0}
+  - {action: nar.read_order_history, tier: 0}
+  - {action: internal.write_draft_report, tier: 0}
+
+  # Tier 1 — do, then notify. Internal state and the ops-consumable cart URL.
+  - {action: internal.state_write, tier: 1}
+  - {action: amazon_business.stage_cart, tier: 1}
+
+  # Tier 2 — ask first. Anything reaching outside the company.
+  - {action: nar.stage_cart, tier: 2}
+  - {action: dynarex.stage_cart, tier: 2}
+  - {action: notify.email, tier: 2}
+  - {action: notify.sms, tier: 2}
+
+# Anomaly triggers that force Tier 3 (docs/policy.md).
+thresholds:
+  tier3_escalation:
+    absolute_total_usd: 75000
+    total_vs_trailing_avg_pct: 150
+    line_qty_vs_trailing_avg_x: 2
+    total_units_vs_trailing_avg_x: 2
+    trailing_window_orders: 8
+    min_history_orders: 4

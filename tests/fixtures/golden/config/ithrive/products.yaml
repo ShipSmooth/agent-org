@@ -1,0 +1,6 @@
+# Standalone listings: components sold on their own. Demand is read via the
+# sales side (the SKU / sales_asin) — a purchase_asin never creates demand.
+standalone:
+  - {sku: "30-0001", supplier: nar, part: "30-0001", sales_asin: B0SALES30A}
+  - {sku: "10-0042", supplier: nar, part: "10-0042", sales_asin: B0SALES10B}
+  - {sku: "HMZ-0001", supplier: internal, part: "HMZ-0001"}

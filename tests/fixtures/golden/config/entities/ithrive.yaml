@@ -1,0 +1,11 @@
+# Test entity — mirrors config/entities/ithrive.yaml.
+entity_id: ithrive
+legal_name: ITHRIVE LLC
+status: active
+timezone: America/New_York
+channels:
+  - {key: fba, name: amazon_fba, fulfillment: fba, has_history: true}
+  - {key: fbm, name: amazon_fbm, fulfillment: merchant, has_history: true}
+  - {key: shopify, name: shopify, fulfillment: merchant, has_history: true}
+  - {key: walmart_sf, name: walmart_seller_fulfilled, fulfillment: merchant, has_history: false}
+  - {key: walmart_wfs, name: walmart_wfs, fulfillment: wfs, has_history: false}

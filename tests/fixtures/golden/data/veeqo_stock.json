@@ -1,0 +1,40 @@
+{
+  "products": [
+    {"sku": "30-0001", "stock_entries": [
+      {"warehouse_id": 70459, "available": 90},
+      {"warehouse_id": 192025, "sellable": 10, "reserved": 5, "unfulfillable": 2}
+    ]},
+    {"sku": "10-0042", "stock_entries": [
+      {"warehouse_id": 70459, "available": 54},
+      {"warehouse_id": 192025, "sellable": 0, "reserved": 3, "unfulfillable": 0}
+    ]},
+    {"sku": "ZZ-0034", "stock_entries": [{"warehouse_id": 70459, "available": 118}]},
+    {"sku": "3161", "stock_entries": [{"warehouse_id": 70459, "available": 80}]},
+    {"sku": "HMZ-0001", "stock_entries": [{"warehouse_id": 70459, "available": 150}]},
+    {"sku": "GLOVE-BLK-L", "stock_entries": [{"warehouse_id": 70459, "available": 90}]},
+    {"sku": "IFAK-CAT-BLACK-bag", "stock_entries": [{"warehouse_id": 70459, "available": 500}]},
+    {"sku": "IFAK-CAT-GREEN-bag", "stock_entries": [{"warehouse_id": 70459, "available": 500}]},
+    {"sku": "IFAK-CAT-COYOTE-bag", "stock_entries": [{"warehouse_id": 70459, "available": 0}]},
+    {"sku": "IFAK-CAT-MULTICAM-bag", "stock_entries": [{"warehouse_id": 70459, "available": 0}]},
+    {"sku": "IFAK-CAT-COMPACT-bag", "stock_entries": [{"warehouse_id": 70459, "available": 400}]},
+    {"sku": "B07X6QZ53J", "stock_entries": [{"warehouse_id": 70459, "available": 1000}]},
+    {"sku": "B0D9GSKGY5", "stock_entries": [{"warehouse_id": 70459, "available": 400}]},
+    {"sku": "B0756SVPMF", "stock_entries": [{"warehouse_id": 70459, "available": 2000}]},
+    {"sku": "IFAK-CAT-BLACK", "stock_entries": [{"warehouse_id": 70459, "available": 25}]},
+    {"sku": "IFAK-CAT-BLACK-FBA", "stock_entries": [
+      {"warehouse_id": 192025, "sellable": 50, "reserved": 4, "unfulfillable": 1}
+    ]},
+    {"sku": "IFAK-CAT-GREEN", "stock_entries": [{"warehouse_id": 70459, "available": 15}]},
+    {"sku": "IFAK-CAT-GREEN-FBA", "stock_entries": [
+      {"warehouse_id": 192025, "sellable": 30, "reserved": 0, "unfulfillable": 0}
+    ]},
+    {"sku": "IFAK-CAT-COYOTE", "stock_entries": [{"warehouse_id": 70459, "available": 0}]},
+    {"sku": "IFAK-CAT-MULTICAM", "stock_entries": [{"warehouse_id": 70459, "available": 0}]},
+    {"sku": "IFAK-CAT-COMPACT", "stock_entries": [{"warehouse_id": 70459, "available": 25}]},
+    {"sku": "IFAK-CAT-COMPACT-FBA", "stock_entries": [
+      {"warehouse_id": 192025, "sellable": 5, "reserved": 0, "unfulfillable": 0}
+    ]},
+    {"sku": "20-315", "stock_entries": [{"warehouse_id": 70459, "available": 12}]},
+    {"sku": "80-0027", "stock_entries": [{"warehouse_id": 70459, "available": -3}]}
+  ]
+}

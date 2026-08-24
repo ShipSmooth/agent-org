@@ -1,0 +1,146 @@
+# Golden-test BOM — the worked example in docs/plain-english-overview.md and
+# docs/replenishment.md §10, as a VALID config (real FBA aliases, no dangling
+# references) exercising every component class and edge:
+# forecast, reorder_point, non_stocked, ops_consumable, internal, unsourced,
+# a channels: [fba] line, a component with both purchase_asin and sales_asin
+# (30-0001, sales side in products.yaml), and a pack size that is not 1
+# (ZZ-0034, two-pack).
+
+bom_version: 2026-08-20-golden
+
+suppliers:
+  nar:
+    name: North American Rescue
+    acquisition: browser
+    lead_time_weeks: 3
+  dynarex:
+    name: Dynarex Corporation
+    acquisition: browser
+    lead_time_weeks: 2
+  amazon_business:
+    name: Amazon Business
+    acquisition: cart_url
+    lead_time_weeks: 1
+  world_richman:
+    name: World Richman Corporation
+    acquisition: purchase_order
+    lead_time_weeks: 2
+  internal:
+    name: Held loose, no current reorder path
+    acquisition: none
+  unsourced:
+    name: Deliberately unsourced
+    acquisition: none
+
+pack_size_policy:
+  mode: discover_and_confirm
+  on_mismatch: halt_line_and_flag
+
+components:
+  - {supplier: nar, part: "30-0001", name: "C-A-T Tourniquet Gen 7, Black",
+     class: forecast, units_per_purchase_unit: 1, moq_min: 400, moq_increment: 200,
+     purchase_asin: B0PURCH30A}
+  - {supplier: nar, part: "10-0042", name: "HyFin Vent Compact Chest Seal, Twin Pack",
+     class: forecast, units_per_purchase_unit: 1, moq_min: 750, moq_increment: 150}
+  - {supplier: nar, part: "ZZ-0034", name: "Nasopharyngeal Airway 28F w/ Lube (Two Pack)",
+     class: forecast, units_per_purchase_unit: 2}
+  - {supplier: dynarex, part: "3161", name: "Krinkle Gauze Roll, Sterile",
+     class: reorder_point, units_per_purchase_unit: null,
+     reorder_point: 100, reorder_target: 400}
+  - {supplier: internal, part: "HMZ-0001", name: "Triangular Bandage 40x40x56in",
+     class: reorder_point, units_per_purchase_unit: 1,
+     reorder_point: 200, reorder_target: 2000}
+  - {supplier: internal, part: "WALL-MOUNT", name: "Wall mount / bracket",
+     class: non_stocked, units_per_purchase_unit: 1}
+  - {supplier: unsourced, part: "GLOVE-BLK-L", name: "Nitrile Gloves, Black, Large",
+     class: reorder_point, units_per_purchase_unit: null,
+     reorder_point: 100, reorder_target: 20000}
+  - {supplier: world_richman, part: "IFAK-CAT-BLACK-bag", name: "MOLLE pouch, Black",
+     class: reorder_point, units_per_purchase_unit: null,
+     reorder_point: 10, reorder_target: 50}
+  - {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", name: "MOLLE pouch, Green",
+     class: reorder_point, units_per_purchase_unit: null,
+     reorder_point: 10, reorder_target: 50}
+  - {supplier: world_richman, part: "IFAK-CAT-COYOTE-bag", name: "MOLLE pouch, Coyote",
+     class: reorder_point, units_per_purchase_unit: null,
+     reorder_point: 10, reorder_target: 50}
+  - {supplier: world_richman, part: "IFAK-CAT-MULTICAM-bag", name: "MOLLE pouch, Multicam",
+     class: reorder_point, units_per_purchase_unit: null,
+     reorder_point: 10, reorder_target: 50}
+  - {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", name: "Slim MOLLE belt carrier",
+     class: reorder_point, units_per_purchase_unit: null,
+     reorder_point: 10, reorder_target: 50}
+  - {supplier: amazon_business, part: "B07X6QZ53J", name: "FBA bag, suffocation warning (large)",
+     class: reorder_point, units_per_purchase_unit: null,
+     reorder_point: 100, reorder_target: 500}
+  - {supplier: amazon_business, part: "B0D9GSKGY5", name: "Blue dot label",
+     class: reorder_point, units_per_purchase_unit: null,
+     reorder_point: 100, reorder_target: 500}
+  - {supplier: amazon_business, part: "B0756SVPMF", name: "FBA item labels, 30 per sheet",
+     class: reorder_point, units_per_purchase_unit: 30,
+     reorder_point: 100, reorder_target: 1000}
+  - {supplier: amazon_business, part: "B0822QWLX2", name: "Shipping tape, 3in wide",
+     class: ops_consumable, units_per_purchase_unit: null}
+
+kits:
+  IFAK-CAT-BLACK:
+    name: IFAK with CAT Gen 7 & HyFin — Black
+    aliases: {fba: IFAK-CAT-BLACK-FBA, fbm: IFAK-CAT-BLACK, shopify: IFAK-CAT-BLACK}
+    components: &ifak_common
+      - {supplier: nar, part: "30-0001", qty: 1}
+      - {supplier: nar, part: "10-0042", qty: 1}
+      - {supplier: nar, part: "ZZ-0034", qty: 1}
+      - {supplier: internal, part: "HMZ-0001", qty: 1}
+      - {supplier: unsourced, part: "GLOVE-BLK-L", qty: 2}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+    pouch: {supplier: world_richman, part: "IFAK-CAT-BLACK-bag", qty: 1}
+
+  IFAK-CAT-GREEN:
+    name: IFAK with CAT Gen 7 & HyFin — Green
+    aliases: {fba: IFAK-CAT-GREEN-FBA, fbm: IFAK-CAT-GREEN, shopify: IFAK-CAT-GREEN}
+    components: *ifak_common
+    pouch: {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", qty: 1}
+
+  IFAK-CAT-COYOTE:
+    name: IFAK with CAT Gen 7 & HyFin — Coyote
+    aliases: {fba: IFAK-CAT-COYOTE-FBA, fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
+    components: *ifak_common
+    pouch: {supplier: world_richman, part: "IFAK-CAT-COYOTE-bag", qty: 1}
+    build_blocked: "Pouch stock is zero — this colourway cannot be assembled."
+
+  IFAK-CAT-MULTICAM:
+    name: IFAK with CAT Gen 7 & HyFin — Multicam
+    aliases: {fba: IFAK-CAT-MULTICAM-FBA, fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
+    components: *ifak_common
+    pouch: {supplier: world_richman, part: "IFAK-CAT-MULTICAM-bag", qty: 1}
+    build_blocked: "Pouch stock is zero — this colourway cannot be assembled."
+
+  IFAK-CAT-COMPACT:
+    name: Compact IFAK Trauma Kit
+    aliases: {fba: IFAK-CAT-COMPACT-FBA, fbm: IFAK-CAT-COMPACT, shopify: IFAK-CAT-COMPACT}
+    components:
+      - {supplier: nar, part: "30-0001", qty: 1}
+      - {supplier: nar, part: "10-0042", qty: 1}
+      - {supplier: unsourced, part: "GLOVE-BLK-L", qty: 1}
+      - {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", qty: 1}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+
+  "20-315":
+    name: Essential Bleeding Control Trauma Kit — Wall Mounted
+    aliases: {fba: 20-315-FBA, fbm: "20-315", shopify: "20-315"}
+    components:
+      - {supplier: nar, part: "10-0042", qty: 1}
+      - {supplier: dynarex, part: "3161", qty: 1}
+      - {supplier: internal, part: "WALL-MOUNT", qty: 1}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+
+standalone_fba_prep:
+  - {sku: "10-0042", consumes: {supplier: amazon_business, part: "B0D9GSKGY5", qty: 1}}
+  - {applies_to: all_fba_units, consumes: {supplier: amazon_business, part: "B0756SVPMF", qty: 1}}
+
+parking_lot:
+  - id: PL-1
+    item: "Source Multicam and Coyote MOLLE pouches"
+    blocks: "IFAK-CAT-COYOTE and IFAK-CAT-MULTICAM cannot be built"
+  - id: PL-7
+    item: "Provide Dynarex and World Richman lead times"

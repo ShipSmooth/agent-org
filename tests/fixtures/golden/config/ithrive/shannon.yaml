@@ -1,0 +1,29 @@
+# Test copy of Shannon's config — same parameters as the worked example.
+identity:
+  from_name: "Shannon (iThrive Medical)"
+  from_address: zach@ithrivemedical.com
+
+recipients:
+  zach:
+    email: zach@ithrivemedical.com
+    sms: env:ZACH_SMS_NUMBER
+
+parameters:
+  velocity_window_days: 90
+  cover_target_weeks: 7
+  safety_stock_weeks: 0
+  round_up_to_nearest: 5
+  mf_floor_weeks: 2
+  fba_cover_weeks: 8
+  walmart_reserve_units: 0
+  box_min: 5
+  box_max: 10
+  overship_tolerance: 0
+
+ops_reminders:
+  cadence_weeks: 6
+  groups:
+    shipping_supplies:
+      recipients: [zach]
+      components:
+        - {supplier: amazon_business, part: "B0822QWLX2"}

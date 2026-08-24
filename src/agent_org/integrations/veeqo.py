@@ -67,7 +67,7 @@ class VeeqoFixtureClient:
                 f"Veeqo fixture '{path}' is missing, so stock cannot be read. "
                 "The run stops rather than assuming a number."
             )
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8-sig"))
 
     def read_inventory(self) -> dict[str, StockPosition]:
         data = self._load("inventory.json")
@@ -125,7 +125,7 @@ class VeeqoFixtureClient:
         path = self.fixture_dir / "velocity_history.json"
         if not path.exists():
             return {}
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         window = int(data["window_days"])
         history: dict[str, SalesVelocity] = {}
         for row in data["rows"]:

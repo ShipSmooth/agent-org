@@ -77,7 +77,7 @@ def run_migrations(
             if cur.fetchone() is not None:
                 skipped.append(path.name)
                 continue
-            cur.execute(path.read_text(encoding="utf-8"))
+            cur.execute(path.read_text(encoding="utf-8-sig"))
             cur.execute("INSERT INTO schema_migrations (filename) VALUES (%s)", (path.name,))
             applied.append(path.name)
     return MigrationResult(applied=tuple(applied), already_applied=tuple(skipped))

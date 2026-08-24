@@ -16,6 +16,8 @@ from dataclasses import dataclass
 import psycopg
 from psycopg import sql
 
+from agent_org.env import env_file
+
 APP_ROLE = "agent_org_app"
 
 
@@ -38,8 +40,11 @@ class DatabaseSettings:
         migrator_dsn = environ.get("DATABASE_MIGRATOR_URL", "")
         if not app_dsn:
             raise DatabaseNotConfigured(
-                "DATABASE_URL is not set. Copy .env.example to .env and fill it in, "
-                "then start the database with `docker compose up -d`."
+                "DATABASE_URL is not set. I looked for it in this command's "
+                f"environment, and in {env_file().describe()}. "
+                "Copy .env.example to .env and fill that line in — the same file "
+                "`docker compose` reads — then start the database with "
+                "`docker compose up -d`."
             )
         return cls(
             app_dsn=app_dsn,

@@ -170,6 +170,7 @@ class Shannon:
                 f"sales: Veeqo ({len(stock)} SKUs read)",
                 f"Inbound to Amazon: {len(inbound)} shipment(s)",
                 "Outstanding orders: Gmail (confirmation with no shipping notice)",
+                *_excluded_channels_line(self.config),
             ),
         )
         body = render(result, self.config, context)
@@ -258,6 +259,22 @@ def _manual_proposals(result: ReplenishmentResult) -> list[dict[str, str | int]]
         }
         for proposal in result.manual_proposals
     ]
+
+
+def _excluded_channels_line(config: LoadedConfig) -> tuple[str, ...]:
+    """The channels whose sales were deliberately not counted.
+
+    Demand that is left out on purpose is still demand left out, so it is
+    named on the report rather than being invisible in a config file.
+    """
+    excluded = config.entity.excluded_veeqo_channels
+    if not excluded:
+        return ()
+    return (
+        "Not counted towards demand, by decision: "
+        + ", ".join(sorted(excluded))
+        + " — reorder demand is US only.",
+    )
 
 
 def _report_lines(result: ReplenishmentResult) -> list[dict[str, str | int | None]]:

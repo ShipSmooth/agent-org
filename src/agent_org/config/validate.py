@@ -78,6 +78,7 @@ def validate(
     findings += _check_kits(config, channel_keys)
     findings += _check_fba_prep(config)
     findings += _check_recipients(config)
+    findings += _check_veeqo_channels(config)
 
     return ValidationResult(findings=tuple(findings), bom_version=boms.bom_version)
 
@@ -535,6 +536,65 @@ def _check_fba_prep(config: LoadedConfig) -> list[Finding]:
                     "being counted.",
                     rule.loc,
                     fix="Fill in the SKU it applies to.",
+                )
+            )
+    return findings
+
+
+def _check_veeqo_channels(config: LoadedConfig) -> list[Finding]:
+    """That each channel maps to exactly one Veeqo name, or to none on purpose.
+
+    Velocity is split on these strings. Two channels claiming the same name
+    would send one channel's sales to the other, and a name that is both
+    mapped and excluded would make counting depend on which check ran first.
+    Both are configuration mistakes with quiet consequences, so they are
+    errors here rather than surprises in a report.
+    """
+    findings: list[Finding] = []
+    entity = config.entity
+    loc = UNKNOWN_LOC
+    seen: dict[str, str] = {}
+    for channel in entity.channels:
+        name = (channel.veeqo_channel or "").strip()
+        if not channel.in_veeqo:
+            if channel.has_history:
+                findings.append(
+                    error(
+                        f"Channel '{channel.key}' is marked 'not_connected' in Veeqo but "
+                        "also has_history: true. A channel with sales has to be readable, "
+                        "or its demand goes missing.",
+                        loc,
+                        fix=(
+                            "Either give the channel the name Veeqo prints on its orders, "
+                            "or set has_history: false."
+                        ),
+                    )
+                )
+            continue
+        if not name:
+            continue
+        first = seen.get(name)
+        if first is not None:
+            findings.append(
+                error(
+                    f"Channels '{first}' and '{channel.key}' both claim the Veeqo channel "
+                    f"'{name}'. Sales on it would be counted against one of them, and "
+                    "which one is not something Shannon should decide.",
+                    loc,
+                    fix="Give each channel the name Veeqo actually prints on its orders.",
+                )
+            )
+        seen[name] = channel.key
+    for excluded in entity.excluded_veeqo_channels:
+        owner = seen.get(excluded)
+        if owner is not None:
+            findings.append(
+                error(
+                    f"Veeqo channel '{excluded}' is listed under "
+                    f"'excluded_veeqo_channels' and is also the channel for "
+                    f"'{owner}'. Its sales cannot be both counted and not counted.",
+                    loc,
+                    fix="Remove it from one of the two lists.",
                 )
             )
     return findings

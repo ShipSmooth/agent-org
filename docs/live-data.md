@@ -77,6 +77,30 @@ Two narrower cases fail the same way, deliberately:
   `ITHRIVE_GMAIL_*` variables) unset is a `ReadFailure` naming the
   variable, not an empty read.
 
+### The three states a channel can be in
+
+`veeqo_channel` in `config/entities/<entity>.yaml` carries the name Veeqo
+prints on an order, matched exactly. iThrive's are `Amazon FBA`,
+`Amazon` (merchant-fulfilled), `Shopify` and `ithrive` (Walmart Seller
+Fulfilled). "Amazon" never absorbs "Amazon FBA": the match is equality,
+not a prefix.
+
+A channel that is not in Veeqo at all — Walmart WFS today — says
+`not_connected`. That is deliberately different from a `TBD-` placeholder,
+which means nobody has looked yet and stops any live run. `not_connected`
+loses nothing, because Veeqo cannot report an order on a channel it does
+not have; the day one appears, the name is unknown and the run stops.
+`validate-config` rejects `not_connected` on a channel marked
+`has_history: true`, and rejects two channels claiming the same name.
+
+Sales that exist and deliberately do not count are named in
+`excluded_veeqo_channels`. Reorder demand is US only by decision, so
+Amazon Canada and Mexico belong there — the list is empty until someone
+reads their exact names off the account, and until then an order from one
+stops the run instead of being counted. Anything excluded is printed on
+the report under the data sources, because demand left out on purpose is
+still demand left out.
+
 Gmail is the authority on what is already on order. An unreadable inbox
 means "unknown", never "nothing outstanding", because "nothing
 outstanding" is how the same order gets placed twice.

@@ -107,6 +107,11 @@ def channel_keys_from(config: LoadedConfig) -> dict[str, str]:
     unresolved: list[str] = []
     for channel in config.entity.channels:
         name = (channel.veeqo_channel or "").strip()
+        if not channel.in_veeqo:
+            # Nothing to map: the channel does not exist in Veeqo, so Veeqo
+            # cannot report an order against it. If it ever does, that name
+            # is unknown and the run stops, which is how this is noticed.
+            continue
         if not name:
             unresolved.append(f"{channel.key} (nothing configured)")
         elif name.startswith(PLACEHOLDER):
@@ -138,7 +143,10 @@ def live_readers(
     prefix = config.entity.credentials_prefix
     return (
         VeeqoLiveClient(
-            channel_keys=channel_keys_from(config), credentials_prefix=prefix, today=today
+            channel_keys=channel_keys_from(config),
+            excluded_channels=frozenset(config.entity.excluded_veeqo_channels),
+            credentials_prefix=prefix,
+            today=today,
         ),
         GmailLiveClient(credentials_prefix=prefix),
     )

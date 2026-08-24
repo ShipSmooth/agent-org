@@ -28,33 +28,54 @@ agents:
 # Veeqo spells it. Live velocity is split by channel on that string, and a
 # channel Veeqo reports which is not named here stops the run instead of
 # being guessed at — guessing FBA versus merchant sends stock to Amazon.
-# The real strings come off the first live read (parking lot PL-11).
+# Zach read the four connected names off the account on 24 Aug 2026.
+#
+# `not_connected` is not a name: it says the channel exists in the business
+# and not in Veeqo. It is deliberately different from a TBD placeholder,
+# which says nobody has looked yet and stops a live run. Veeqo cannot
+# report an order on a channel it does not have, so nothing goes uncounted;
+# the day one appears, its name is unknown and the run stops (PL-11).
 channels:
   - name: amazon_fba
     key: amazon_fba
     fulfillment: fba
     has_history: true
-    veeqo_channel: TBD-VEEQO-CHANNEL-AMAZON-FBA
+    veeqo_channel: "Amazon FBA"
   - name: amazon_fbm
     key: amazon_fbm
     fulfillment: merchant
     has_history: true
-    veeqo_channel: TBD-VEEQO-CHANNEL-AMAZON-FBM
+    # Veeqo spells merchant-fulfilled Amazon simply "Amazon". Matching is
+    # exact, so this never swallows "Amazon FBA" above.
+    veeqo_channel: "Amazon"
   - name: shopify
     key: shopify
     fulfillment: merchant
     has_history: true
-    veeqo_channel: TBD-VEEQO-CHANNEL-SHOPIFY
+    veeqo_channel: "Shopify"
   - name: walmart_sf
     key: walmart_sf
     fulfillment: merchant
     has_history: false      # approved, zero history — silent until it has sales
-    veeqo_channel: TBD-VEEQO-CHANNEL-WALMART-SF
+    # Zach's account names this channel after the seller, not the
+    # programme. Seller-fulfilled is what Justin ships by hand, and WFS is
+    # separate and not connected at all — but the string itself does not
+    # prove which one it is, and nobody has read it off the account with a
+    # credential (PL-12).
+    veeqo_channel: "ithrive"
   - name: walmart_wfs
     key: walmart_wfs
     fulfillment: wfs
     has_history: false
-    veeqo_channel: TBD-VEEQO-CHANNEL-WALMART-WFS
+    veeqo_channel: not_connected   # no such channel in Veeqo yet
+
+# Channels Veeqo does report and Shannon deliberately does not count.
+# Reorder demand is US only by Zach's decision (24 Aug 2026): Canada and
+# Mexico FBA/FBM sales do not create demand here. The list is empty because
+# nobody has read those channels' exact Veeqo names off the account. Until
+# they are here, an order on one of them is an unnamed channel and stops the
+# run — loudly wrong rather than quietly counted (PL-12).
+excluded_veeqo_channels: []
 
 suppliers_config: config/ithrive/suppliers.yaml
 boms_config: config/ithrive/boms.yaml

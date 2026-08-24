@@ -772,20 +772,38 @@ parking_lot:
       then correct manual_stock here. Shannon will ask again automatically once any
       count passes eight weeks.
 
+  # PL-11 RESOLVED for the four connected channels — see PL-12
   - id: PL-11
+    resolved: true
     item: "The names Veeqo prints on each sales channel"
     detail: >
-      Live velocity is split by channel on the channel name Veeqo puts on an order,
-      and nothing on record says how Veeqo spells those names for this account. The
-      five entries in config/entities/ithrive.yaml therefore carry obvious
-      placeholders (TBD-VEEQO-CHANNEL-...) rather than plausible guesses. The first
-      live read names every channel it actually saw, in one sentence; paste those
-      strings in and the split is correct from then on.
+      RESOLVED 24 Aug 2026. Zach read the names off the account: "Amazon FBA" for
+      FBA, "Amazon" for merchant-fulfilled Amazon, "Shopify" for Shopify direct,
+      and "ithrive" for Walmart Seller Fulfilled. Walmart WFS has no Veeqo channel
+      at all and carries not_connected rather than a placeholder. Matching is
+      exact, so "Amazon" never absorbs "Amazon FBA". What each string means is
+      still unverified against the account — that is PL-12.
     blocks: >
-      The first live Veeqo run. Shannon stops instead of deciding for herself
-      whether a channel's sales are FBA or merchant-fulfilled, because that answer
-      is what sends stock to Amazon. Component totals and the reorder-point lines
-      are unaffected by the split; the FBA/merchant allocation is.
+      Nothing. The four names unblock the first live Veeqo run.
+
+  - id: PL-12
+    item: "Two channel facts that came from Zach's reading, not from the account"
+    detail: >
+      First, "ithrive" is configured as Walmart Seller Fulfilled on Zach's word.
+      The string names the seller, not the programme, so nothing in it distinguishes
+      seller-fulfilled from WFS; the two are told apart in Veeqo by the channel's
+      type and its warehouse, which needs a credential to read. Second, reorder
+      demand is US only by decision, so Amazon Canada and Mexico sales do not count
+      — but nobody has read how those two channels are spelled, so
+      excluded_veeqo_channels is empty.
+    blocks: >
+      Nothing today, and it fails in the safe direction either way. If "ithrive" is
+      really WFS, Walmart demand lands on the wrong one of two channels that both
+      have zero history, which changes no number now. If a Canadian or Mexican order
+      appears, its channel name is unnamed and the run stops rather than counting it
+      — noisy, not wrong. Read both off the account at the first live run: confirm
+      the channel behind "ithrive", and paste the CA/MX names into
+      excluded_veeqo_channels.
 
   # PL-8 RESOLVED — see the note on PL-4 above
   - id: PL-8

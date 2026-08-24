@@ -273,9 +273,15 @@ class VeeqoLiveClient:
     A channel Veeqo reports and configuration does not name stops the run:
     quietly dropping its sales would understate demand, and quietly adding
     them to another channel would misdirect an FBA send.
+
+    `excluded_channels` are the ones a human has decided do not count —
+    Amazon Canada and Mexico, by Zach's decision that reorder demand is US
+    only. They are skipped by name and reported, never by silence: a
+    channel absent from both mappings still stops the run.
     """
 
     channel_keys: Mapping[str, str]
+    excluded_channels: frozenset[str] = frozenset()
     credentials_prefix: str = ""
     timeout_seconds: float = 30.0
     base_url: str = VEEQO_BASE_URL
@@ -387,6 +393,10 @@ class VeeqoLiveClient:
                 if str(order.get("status", "")).lower() in NOT_A_SALE:
                     continue
                 channel_name = self._channel_name(order)
+                if channel_name in self.excluded_channels:
+                    # Named, decided, and printed on the report by the run;
+                    # not silently dropped here.
+                    continue
                 channel_key = self.channel_keys.get(channel_name)
                 if channel_key is None:
                     unknown.add(channel_name)

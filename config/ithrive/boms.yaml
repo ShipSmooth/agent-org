@@ -131,7 +131,7 @@ components:
      class: forecast, units_per_purchase_unit: 1, moq_min: 400, moq_increment: 200}
   - {supplier: nar, part: "30-0033", name: "C-A-T Tourniquet Gen 7, Blue (TRAINING)",
      class: forecast, units_per_purchase_unit: 1, moq_min: 400, moq_increment: 200,
-     note: "Resold standalone only — in NO kit, so it never appears in a BOM explosion. Added 24 Aug 2026 once the C-A-T channel-SKU mapping revealed a third colour."}
+     note: "Resold standalone only — in NO kit, so it never appears in a BOM explosion. Added 24 Aug 2026 once the C-A-T channel-SKU mapping revealed a third colour. MOQ 400/200 is ASSUMED from the live colourways and is unconfirmed for a training unit — see PL-9."}
   - {supplier: nar, part: "10-0042", name: "HyFin Vent Compact Chest Seal, Twin Pack",
      class: forecast, units_per_purchase_unit: 1, moq_min: 750, moq_increment: 150,
      note: "One twin pack = 2 seals. Kit qty 1 means one twin pack (per answer B5)."}
@@ -330,11 +330,18 @@ components:
 # ---------------------------------------------------------------------------
 # KITS — 7 kits, 60 BOM lines
 # ---------------------------------------------------------------------------
+#
+# `aliases` are the SKUs VEEQO counts stock under, one per channel. They are NOT
+# Amazon's SKUs: Amazon holds its own auto-generated strings, and those live in
+# config/ithrive/listings.yaml, which is the single authority on Amazon identity
+# and on whether a listing is live. The `fba: TODO` placeholders that used to sit
+# here were removed on 24 Aug 2026 when listings.yaml resolved PL-8 — keeping them
+# would have meant two files claiming the same fact and eventually disagreeing.
 kits:
 
   "20-314":
     name: Essential Bleeding Control Trauma Kit — Mobile
-    aliases: {fba: TODO, fbm: "20-314", shopify: "20-314"}
+    aliases: {fbm: "20-314", shopify: "20-314"}
     components:
       - {supplier: nar, part: "30-0023", qty: 1}
       - {supplier: nar, part: "10-0042", qty: 1}          # one twin pack, per B5
@@ -349,7 +356,7 @@ kits:
 
   "20-315":
     name: Essential Bleeding Control Trauma Kit — Wall Mounted
-    aliases: {fba: TODO, fbm: "20-315", shopify: "20-315"}
+    aliases: {fbm: "20-315", shopify: "20-315"}
     components:
       - {supplier: nar, part: "30-0023", qty: 1}
       - {supplier: nar, part: "10-0042", qty: 1}
@@ -365,7 +372,7 @@ kits:
 
   "25-001":
     name: Express Bleeding Control Kit
-    aliases: {fba: TODO, fbm: "25-001", shopify: "25-001"}
+    aliases: {fbm: "25-001", shopify: "25-001"}
     note: "Wall-mounted sibling is 25-002."
     components:
       - {supplier: nar, part: "30-0023", qty: 1}
@@ -382,7 +389,7 @@ kits:
 
   "25-002":
     name: Express Bleeding Control Kit — Wall Mounted
-    aliases: {fba: TODO, fbm: "25-002", shopify: "25-002"}
+    aliases: {fbm: "25-002", shopify: "25-002"}
     components:
       - {supplier: nar, part: "30-0023", qty: 1}
       - {supplier: amazon_business, part: "B0FC56RYZ3", qty: 2}
@@ -399,7 +406,7 @@ kits:
 
   "25-010":
     name: Basic Bleeding Control Kit — C-A-T
-    aliases: {fba: TODO, fbm: "25-010", shopify: "25-010"}
+    aliases: {fbm: "25-010", shopify: "25-010"}
     components:
       - {supplier: nar, part: "30-0023", qty: 1}          # orange, per B2
       - {supplier: amazon_business, part: "B0FC56RYZ3", qty: 2}
@@ -414,7 +421,7 @@ kits:
 
   "26-001":
     name: Basic Bleeding Control Kit — C-A-T (Red Bag)
-    aliases: {fba: TODO, fbm: "26-001", shopify: "26-001"}
+    aliases: {fbm: "26-001", shopify: "26-001"}
     components:
       - {supplier: nar, part: "30-0023", qty: 1}          # orange, per B3
       - {supplier: nar, part: "30-0168", qty: 1}          # 6in ETD
@@ -430,7 +437,7 @@ kits:
 
   "26-002":
     name: Basic Bleeding Control Kit — SAM XT
-    aliases: {fba: TODO, fbm: "26-002", shopify: "26-002"}
+    aliases: {fbm: "26-002", shopify: "26-002"}
     components:
       - {supplier: sam_medical, part: "XT600-OR-EN", qty: 1}     # orange metal, per B4
       - {supplier: amazon_business, part: "B0FC56RYZ3", qty: 2}
@@ -450,7 +457,7 @@ kits:
     name: IFAK with CAT Gen 7 & HyFin — Black
     family: IFAK-CAT
     family_name: IFAK with CAT Gen 7 & HyFin (all colourways)
-    aliases: {fba: TODO, fbm: IFAK-CAT-BLACK, shopify: IFAK-CAT-BLACK}
+    aliases: {fbm: IFAK-CAT-BLACK, shopify: IFAK-CAT-BLACK}
     components: &ifak_common
       - {supplier: nar, part: "30-0001", qty: 1}          # black, per B3
       - {supplier: nar, part: "10-0042", qty: 1}
@@ -469,14 +476,14 @@ kits:
   IFAK-CAT-GREEN:
     name: IFAK with CAT Gen 7 & HyFin — Green
     family: IFAK-CAT
-    aliases: {fba: TODO, fbm: IFAK-CAT-GREEN, shopify: IFAK-CAT-GREEN}
+    aliases: {fbm: IFAK-CAT-GREEN, shopify: IFAK-CAT-GREEN}
     components: *ifak_common
     pouch: {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", qty: 1}
 
   IFAK-CAT-COYOTE:
     name: IFAK with CAT Gen 7 & HyFin — Coyote
     family: IFAK-CAT
-    aliases: {fba: TODO, fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
+    aliases: {fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
     components: *ifak_common
     pouch: {supplier: orca_tactical, part: "ORCA-MOLLE-EMT-COYOTE", qty: 1}
     build_blocked: "Pouch stock is zero — this colourway cannot be assembled."
@@ -484,14 +491,14 @@ kits:
   IFAK-CAT-MULTICAM:
     name: IFAK with CAT Gen 7 & HyFin — Multicam
     family: IFAK-CAT
-    aliases: {fba: TODO, fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
+    aliases: {fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
     components: *ifak_common
     pouch: {supplier: orca_tactical, part: "ORCA-MOLLE-EMT-MULTICAM", qty: 1}
     build_blocked: "Pouch stock is zero — this colourway cannot be assembled."
 
   IFAK-CAT-COMPACT:
     name: Compact IFAK Trauma Kit
-    aliases: {fba: TODO, fbm: IFAK-CAT-COMPACT, shopify: TODO}
+    aliases: {fbm: IFAK-CAT-COMPACT, shopify: TODO}
     note: "Black only. SKU assigned 20 Aug 2026; must be mirrored into Veeqo, Shopify, Amazon."
     components:
       - {supplier: nar, part: "30-0001", qty: 1}
@@ -551,6 +558,20 @@ parking_lot:
       Three of the four come from Next Day Flyers, one from 48HourPrint; both
       quote ~10 business days.
     blocks: "Nothing — retained for the record"
+
+  - id: PL-9
+    item: "NAR terms for the blue TRAINING C-A-T 30-0033 — 400 minimum / 200 step?"
+    detail: >
+      30-0033 carries moq_min 400 and moq_increment 200 because that is NAR's rule
+      for the live C-A-T colourways, and it is what the 24 Aug BOM says. Nothing on
+      record states the terms for the TRAINING unit specifically: it is a different
+      product at a different price, and training stock is often sold in smaller
+      quantities. Shannon has applied 400/200 as written rather than guessing at
+      something kinder — but it is assumed, not confirmed.
+    blocks: >
+      Nothing today. If NAR's real minimum is lower, the first 30-0033 order will be
+      larger than it needed to be — the error is in the safe direction, but it is
+      real money. Ask NAR, then correct moq_min / moq_increment here.
 
   # PL-8 RESOLVED — kept below for the record
   - id: PL-8

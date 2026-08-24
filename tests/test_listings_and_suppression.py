@@ -338,3 +338,45 @@ def test_the_report_prints_the_product_name_for_an_internal_reference(
     # The name leads and the reference is labelled as ours, so no line in the
     # report can be mistaken for something Orca would recognise.
     assert f"orca_tactical  {component.name}  (our reference {key.part})" in body
+
+
+# --- one fact, one file ----------------------------------------------------
+
+
+def test_no_kit_still_carries_a_placeholder_amazon_sku(config: LoadedConfig) -> None:
+    """boms.yaml used to carry `fba: TODO` on every kit. listings.yaml answers
+    that question now, so the placeholders were removed rather than copied:
+    two files holding the same fact is how they come to disagree."""
+    for kit_group, kit in config.boms.kits.items():
+        listing_set = config.listings.for_kit(kit_group)
+        assert listing_set is not None, f"{kit_group} is not in listings.yaml"
+        for channel in set(listing_set.covered_channels) & set(kit.aliases):
+            # Where an alias survives it is Veeqo's SKU for that channel, which
+            # is Zach's own and is a different thing from Amazon's.
+            assert kit.aliases[channel] is not None
+
+
+def test_listings_yaml_answers_for_amazon_and_for_nothing_else(config: LoadedConfig) -> None:
+    """It covers `fba` and `fbm` for every kit, including the ones it says have
+    no listing. It says nothing about Shopify, so a missing Shopify SKU is
+    still a gap and is still reported as one."""
+    warnings = [item.message for item in validate(config).warnings]
+    assert not [text for text in warnings if "no SKU for the 'fba' channel" in text]
+    assert [text for text in warnings if "IFAK-CAT-COMPACT" in text and "shopify" in text]
+
+    never_listed = config.listings.for_kit("20-314")
+    assert never_listed is not None
+    assert never_listed.covers("fba") and never_listed.covers("fbm")
+    assert not never_listed.covers("shopify")
+
+
+def test_the_training_tourniquet_carries_the_cat_moq_until_nar_says_otherwise(
+    config: LoadedConfig,
+) -> None:
+    """400/200 is NAR's rule for the live colourways and is what the BOM says.
+    Nothing on record states the terms for a TRAINING unit, so it is applied as
+    written and flagged in the parking lot rather than softened by guesswork."""
+    blue = config.boms.components[ComponentKey(supplier="nar", part="30-0033")]
+    assert (blue.moq_min, blue.moq_increment) == (400, 200)
+    parked = [item for item in config.boms.parking_lot if item.id == "PL-9"]
+    assert parked and "400" in (parked[0].detail or "")

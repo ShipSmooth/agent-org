@@ -56,8 +56,8 @@ bom_version: 2026-08-20          # date-stamped; printed on every report
 kits:
   IFAK-CAT-BLACK:                       # other colourways: IFAK-CAT-GREEN,
     aliases:                            # IFAK-CAT-COYOTE, IFAK-CAT-MULTICAM
-      fba: TODO                         # the Veeqo "simple product" used for FBA stock
       fbm: IFAK-CAT-BLACK               # the Veeqo bundle SKU used for FBM/Shopify
+      shopify: IFAK-CAT-BLACK           # Amazon's OWN SKU is not here: see listings.yaml
     components:                         # identity is (supplier, supplier_part_number)
       - {supplier: nar, part: "30-0001", qty: 1}   # C-A-T Gen 7, black
       - {supplier: nar, part: "10-0042", qty: 1}   # HyFin Vent Compact twin pack
@@ -101,10 +101,17 @@ Rules:
 - Every HMZ kit MUST appear here, with **all** component lines including
   packaging, consumables, FBA-prep lines, and non-stocked lines (83 lines
   across the seven kit definitions today; the committed file is the count).
-- `aliases` maps the kit to every channel-specific SKU. Sales of any alias
-  are demand for the same kit. This is the explicit fix for the Veeqo FBA
-  limitation: the FBA simple product is joined to its recipe here and only
-  here.
+- `aliases` maps the kit to every channel-specific SKU **Veeqo** counts it
+  under. Sales of any alias are demand for the same kit. This is the
+  explicit fix for the Veeqo FBA limitation: the kit is joined to its
+  recipe here and only here.
+- Amazon's own SKUs are **not** aliases and are not in this file. They live
+  in `config/<entity>/listings.yaml`, which is the sole authority on Amazon
+  identity and status (§5). The `fba: TODO` placeholders that used to sit in
+  `aliases` were deleted on 24 Aug 2026 rather than filled in: one fact, one
+  file, because two files holding it eventually disagree. A missing alias on
+  a channel `listings.yaml` does not speak for — Shopify — is still a gap and
+  is still warned about.
 - No nested kits (Veeqo caps bundles at 25 components, no nesting; we adopt
   the same limits so config and Veeqo stay comparable).
 - A kit selling anywhere with no BOM entry is a **hard run failure**, not a
@@ -722,10 +729,13 @@ Every report carries a **persistent, numbered parking lot** of unresolved
 issues — items neither fixable by Shannon nor blocking the whole run.
 Each item shows: ID (`PL-n`), description, what it blocks, and how long it
 has been open. Items are seeded in `config/ithrive/boms.yaml` — three
-today, after the 21 Aug 2026 sourcing answers closed five: **PL-1** Orca
-Tactical's lead time and the real Coyote/Multicam part numbers, **PL-4**
-the Basic-kit instruction card, and **PL-8** the Seller Central export
-that fills in the FBA aliases and sales ASINs.
+today: **PL-1** Orca Tactical's first order quantities and reorder points,
+**PL-4** the instruction-card mapping (resolved, retained for the record),
+and **PL-9** whether NAR's 400-minimum / 200-step rule really applies to
+the blue *training* C-A-T `30-0033` — it is applied as the BOM states it,
+but nothing on record confirms the terms for a training unit, and Shannon
+says so rather than softening the number on a guess. **PL-8** — the Seller
+Central export — was closed on 24 Aug 2026 by `listings.yaml`.
 Shannon **adds** an item automatically when she hits an unresolvable line
 mid-run; she **removes** one only when Zach explicitly clears it. The
 parking lot never silently shrinks — that is the point.
@@ -748,9 +758,11 @@ stack traces**. Checks:
 - Every kit alias maps to a real channel SKU. An alias pointing at a
   channel this business does not sell on is an error; an alias still
   marked `TODO` is a **warning** naming the kit, the channel, the file
-  and the line — the gap is tracked as PL-8 and it under-counts that
-  kit's sales, but it does not stop a run that is useful for the other
-  kits.
+  and the line — it under-counts that kit's sales, but it does not stop a
+  run that is useful for the other kits. The warning is suppressed where
+  `listings.yaml` speaks for that channel, because there the answer is
+  simply held elsewhere; it is **not** suppressed for Shopify, which that
+  file says nothing about.
 - `reorder_point ≤ reorder_target` (warning).
 - Every recipient role referenced by any notification rule (email or SMS)
   is mapped to a real address/number for this entity in

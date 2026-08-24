@@ -55,6 +55,13 @@ class ListingSet:
     sales_asins: tuple[str, ...]
     listings: tuple[ChannelListing, ...]
     loc: Loc
+    # Channels this file speaks for, including the ones it says are empty.
+    # `fba: null` is an answer — there is no listing — and must not be
+    # confused with silence, which is what the file gives about Shopify.
+    covered_channels: tuple[str, ...] = ()
+
+    def covers(self, channel: str) -> bool:
+        return channel in self.covered_channels
 
     @property
     def channel_skus(self) -> tuple[str, ...]:
@@ -159,9 +166,11 @@ def load_listings(path: Path) -> ListingsConfig:
             entry = value if isinstance(value, YamlMap) else YamlMap()
             loc = kits_block.loc_of(kit_group)
             listings: list[ChannelListing] = []
+            covered: list[str] = []
             for channel, channel_value in entry.items():
                 if channel == "sales_asin":
                     continue
+                covered.append(str(channel))
                 listing = _channel_listing(
                     channel, channel_value, entry.loc_of(channel), f"kit '{kit_group}'"
                 )
@@ -173,6 +182,7 @@ def load_listings(path: Path) -> ListingsConfig:
                 sales_asins=(str(sales_asin),) if isinstance(sales_asin, str) else (),
                 listings=tuple(listings),
                 loc=loc,
+                covered_channels=tuple(covered),
             )
 
     components: dict[str, ListingSet] = {}
@@ -221,6 +231,7 @@ def load_listings(path: Path) -> ListingsConfig:
                     sales_asins=asins,
                     listings=tuple(listings),
                     loc=existing.loc if existing else by_sku.loc,
+                    covered_channels=tuple(dict.fromkeys(item.channel for item in listings)),
                 )
 
     unresolved: list[UnresolvedListing] = []

@@ -1,0 +1,40 @@
+# Golden fixture entity — the worked example in docs/replenishment.md §10.
+#
+# Deliberately a copy of the real iThrive shape with the real file's
+# unresolved values resolved, so a full run can complete end to end.
+
+entity_id: ithrive
+legal_name: iThrive Medical LLC
+status: active
+timezone: America/New_York
+
+agents:
+  - name: shannon
+    kind: shannon_replenishment
+    schedule: "cron: 0 6 * * MON"
+
+channels:
+  - name: amazon_fba
+    key: fba
+    fulfillment: fba
+    has_history: true
+  - name: amazon_fbm
+    key: fbm
+    fulfillment: merchant
+    has_history: true
+  - name: shopify
+    key: shopify
+    fulfillment: merchant
+    has_history: true
+  - name: walmart_sf
+    key: walmart_sf
+    fulfillment: merchant
+    has_history: false
+
+suppliers_config: config/ithrive/suppliers.yaml
+boms_config: config/ithrive/boms.yaml
+shannon_config: config/ithrive/shannon.yaml
+policy_config: config/ithrive/policy.yaml
+
+credentials_prefix: ITHRIVE_
+books: quickbooks_online

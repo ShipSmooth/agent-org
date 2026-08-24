@@ -8,6 +8,23 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The row-level-security tests need a real Postgres: RLS is a Postgres
+    # feature, and a fake would prove nothing.
+    services:
+      postgres:
+        image: postgres:16.9
+        env:
+          POSTGRES_DB: agent_org
+          POSTGRES_USER: agent_org_migrator
+          # Throwaway CI database, reachable only from this job.
+          POSTGRES_PASSWORD: ci-local-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agent_org_migrator -d agent_org"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      AGENT_ORG_TEST_MIGRATOR_URL: postgresql://agent_org_migrator:ci-local-only@127.0.0.1:5432/agent_org
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

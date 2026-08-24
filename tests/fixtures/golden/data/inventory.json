@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "Veeqo products report, saved. 70459 is Springfield, 192025 is Amazon US FBA.",
+    "Cells written as '40 (35)' are the quirk the live report has: this window",
+    "and the comparison window in one cell. Only the first number counts.",
+    "FBA reserved and unfulfillable are recorded and never counted as stock."
+  ],
+  "products": [
+    {"sku": "30-0001", "warehouses": {"70459": "60 (55)"},
+     "fba": {"sellable": 40, "reserved": 25, "unfulfillable": 5}},
+    {"sku": "10-0042", "warehouses": {"70459": 54}},
+    {"sku": "ZZ-0034", "warehouses": {"70459": 118}},
+    {"sku": "3161", "warehouses": {"70459": 80}},
+    {"sku": "HMZ-0001", "warehouses": {"70459": 100}},
+    {"sku": "GLOVE-BLK-L", "warehouses": {"70459": 300}},
+    {"_comment": "Negative available is real: 12 more are committed than exist.",
+     "sku": "30-0052", "warehouses": {"70459": "-12 (4)"}},
+    {"sku": "B07X6QZ53J", "warehouses": {"70459": 150}},
+    {"sku": "B0756SVPMF", "warehouses": {"70459": 400}},
+    {"sku": "WALL-MOUNT-01", "warehouses": {"70459": 0}},
+
+    {"sku": "IFAK-CAT-BLACK-bag", "warehouses": {"70459": 2000}},
+    {"sku": "IFAK-CAT-GREEN-bag", "warehouses": {"70459": 2000}},
+    {"sku": "IFAK-CAT-COYOTE-bag", "warehouses": {"70459": 0}},
+    {"sku": "IFAK-CAT-MULTICAM-bag", "warehouses": {"70459": 0}},
+    {"sku": "IFAK-CAT-COMPACT-bag", "warehouses": {"70459": 1200}},
+
+    {"sku": "IFAK-CAT-BLACK", "warehouses": {"70459": 20}},
+    {"sku": "IFAK-CAT-GREEN", "warehouses": {"70459": 20}},
+    {"sku": "IFAK-CAT-COYOTE", "warehouses": {"70459": 0}},
+    {"sku": "IFAK-CAT-MULTICAM", "warehouses": {"70459": 0}},
+    {"sku": "IFAK-CAT-BLACK-FBA", "warehouses": {"192025": 50},
+     "fba": {"sellable": 50, "reserved": 4, "unfulfillable": 1}},
+    {"sku": "IFAK-CAT-GREEN-FBA", "warehouses": {"192025": 30},
+     "fba": {"sellable": 30, "reserved": 2, "unfulfillable": 0}},
+    {"sku": "IFAK-CAT-COYOTE-FBA", "fba": {"sellable": 0}},
+    {"sku": "IFAK-CAT-MULTICAM-FBA", "fba": {"sellable": 0}},
+
+    {"sku": "IFAK-CAT-COMPACT", "warehouses": {"70459": 10}},
+    {"sku": "IFAK-CAT-COMPACT-FBA", "warehouses": {"192025": 20},
+     "fba": {"sellable": 20, "reserved": 3, "unfulfillable": 0}},
+
+    {"sku": "ESSENTIAL-WALL", "warehouses": {"70459": 4}}
+  ]
+}

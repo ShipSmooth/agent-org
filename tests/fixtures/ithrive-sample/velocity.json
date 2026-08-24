@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "Sample 90-day sales for the live parts list. Invented figures, real",
+    "SKUs. Weekly velocity is units_sold x 7 / 90, kept exact.",
+    "Amazon rows are keyed by Amazon's own channel SKU, which is what",
+    "Veeqo reports and what listings.yaml maps; the internal SKU is used",
+    "only where Amazon holds no listing (Shopify and direct)."
+  ],
+  "window_days": 90,
+  "rows": [
+    {"sku": "20-314", "units_sold": 60, "by_channel": {"fbm": 40, "shopify": 20}},
+    {"sku": "20-315", "units_sold": 45, "by_channel": {"fbm": 30, "shopify": 15}},
+    {"sku": "25-001", "units_sold": "120 (110)", "by_channel": {"fbm": 80, "shopify": 40}},
+    {"sku": "25-002", "units_sold": 30, "by_channel": {"fbm": 20, "shopify": 10}},
+    {"sku": "25-010", "units_sold": 24, "by_channel": {"fbm": 16, "shopify": 8}},
+    {"sku": "26-001", "units_sold": 90, "by_channel": {"fbm": 60, "shopify": 30}},
+    {"sku": "26-002", "units_sold": 36, "by_channel": {"fbm": 24, "shopify": 12}},
+
+    {"sku": "IFAK-CAT-BLACK", "units_sold": 30, "by_channel": {"fbm": 20, "shopify": 10}},
+    {"sku": "IFAK-CAT-GREEN", "units_sold": 23, "by_channel": {"fbm": 15, "shopify": 8}},
+    {"sku": "IFAK-CAT-COYOTE", "units_sold": 12, "by_channel": {"fbm": 8, "shopify": 4}},
+    {"sku": "IFAK-CAT-MULTICAM", "units_sold": 10, "by_channel": {"fbm": 6, "shopify": 4}},
+    {"sku": "IFAK-CAT-COMPACT", "units_sold": 18, "by_channel": {"fbm": 18}},
+
+    {"_comment": "Components sold on their own, not inside a kit.",
+     "sku": "30-0001", "units_sold": 180},
+    {"sku": "10-0042", "units_sold": 90},
+    {"sku": "30-0052", "units_sold": 60},
+    {"sku": "XT600-OR-EN", "units_sold": 30},
+
+    {"_comment": "Amazon's own SKUs (listings.yaml). 30-0001 sells under two.",
+     "sku": "GK-VQI5-LWIS", "units_sold": 30, "by_channel": {"fba": 30}},
+    {"sku": "5G-AP1S-TUE4", "units_sold": 120, "by_channel": {"fbm": 120}},
+    {"sku": "Q3-MWFF-Y7P4", "units_sold": 60, "by_channel": {"fba": 60}}
+  ]
+}

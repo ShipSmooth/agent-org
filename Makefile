@@ -13,8 +13,9 @@ typecheck:
 importcheck:
 	uv run lint-imports
 
-# Phase 0 has no tests yet; pytest exit code 5 (no tests collected) is OK.
+# The database tests need a Postgres to talk to (`docker compose up -d`);
+# they skip themselves, loudly, when there is none.
 test:
-	uv run pytest || [ $$? -eq 5 ]
+	uv run pytest -rs --cov --cov-fail-under=85
 
 check: lint typecheck importcheck test

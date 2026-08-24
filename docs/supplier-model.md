@@ -17,11 +17,13 @@ before policy tiers are even consulted.
 | Supplier | Integration | Capabilities | Notes |
 |---|---|---|---|
 | **NAR** (North American Rescue) | Browser automation (headless Chromium) against narescue.com — **no API**, confirmed with vendor | `read_catalog`, `read_order_history`, `stage_cart` | Session expires frequently and requires clicking a login button; automation re-logs-in from env-var credentials (Chrome saved passwords are unreachable from a container). Freight is LTL, auto-quoted only at checkout: discovered and reported, never predicted. Catalogue updates arrive monthly, manually, from Zach's NAR contact. `read_order_history` covers order **numbers and per-line quantities only** — the site's order-status field is unreliable and must never be read; outstanding orders come from Gmail (docs/replenishment.md §3.1). **No `purchase` capability in v1.** |
-| **Dynarex** | Browser automation against dynarex.com — Zach orders there directly via his account | `read_catalog`, `stage_cart` | Krinkle gauze 3161, petrolatum gauze 3553, Sensi-Wrap 3173, cold packs 3683. Credentials from env vars, `DYNAREX_` prefix. Same hard rule as NAR: stage the cart, **never check out**. Lead time TODO — Zach to provide (parking-lot PL-7). |
+| **Dynarex** | Browser automation against dynarex.com — Zach orders there directly via his account | `read_catalog`, `stage_cart` | Krinkle gauze 3161, petrolatum gauze 3553, Sensi-Wrap 3173, cold packs 3683. Credentials from env vars, `DYNAREX_` prefix. Same hard rule as NAR: stage the cart, **never check out**. Lead time 1 week (~5 business days). |
 | **Amazon Business** | Cart URL construction from `purchase_asin`s (no account access) | `stage_cart` (URL only), `report_only` lines otherwise | Overlaps Dynarex lines; whichever supplier a component record names. Staging an ops-consumable cart is Tier 1, notify after — a cart URL spends nothing and reaches no outside party. |
-| **World Richman** (soft goods: carriers, pouches, bags) | None | `report_only` | Part numbers follow `<kit sku>-bag`. Lead time TODO (PL-7). |
-| **Own printed** (instruction cards) | None | `report_only` | Three card versions exist; kit mapping unresolved (PL-4). |
-| **internal** (state) | — | none | Real stock held loose, no supplier attached yet. Reports and prompts only; never a cart, never a run failure. Today: triangular bandage `HMZ-0001` (~2,000 loose). |
+| **World Richman** (soft goods: carriers, pouches, bags) | None | `report_only` | Part numbers follow `<kit sku>-bag`. Lead time 9 weeks (~60 days), the longest in the system, so this supplier carries its own `cover_target_weeks: 13`. |
+| **Own printed** (instruction cards) | None | `report_only` | Lead time 2 weeks. Four cards, both printers confirmed: `CARD-ESSENTIAL-EXPRESS` (20-314, 20-315, 25-001, 25-002) and the two Basic cards `CARD-BASIC-CAT` (25-010) and `CARD-BASIC-SAMXT` (26-002) from Next Day Flyers; `CARD-REDBAG` (26-001) from 48HourPrint. |
+| **SAM Medical** (SAM XT tourniquets) | None | `report_only` | Bought direct, not through NAR. Lead time 2 weeks. |
+| **Orca Tactical Gear** (Coyote/Multicam pouches) | None | `report_only` | Replaces World Richman for those two colourways, whose MOQ made them unviable. Lead time 2 weeks (~10 calendar days). Orca publishes **no item numbers at all**: `ORCA-MOLLE-EMT-COYOTE` and `ORCA-MOLLE-EMT-MULTICAM` are our own references, flagged `part_is_internal_reference: true`, and ordering quotes the product name. |
+| **internal** (state) | — | none | Real stock held loose, no supplier attached yet. Reports and prompts only; never a cart, never a run failure. Today: the wall mount only. The triangular bandage left this state on 21 Aug 2026 for Dynarex `3681`. |
 | **unsourced** (state) | — | none | Deliberately open, permanently — Zach buys from whoever is cheapest. Shannon prompts when stock is low and **never picks a supplier for him**. Today: black nitrile gloves. |
 | **pending** (state, 0 lines today) | — | `pending` | Not a default: config load fails loudly if a `pending` component's class routes to any purchase path; otherwise the line appears on the gap list flagged "supplier pending". The Latex Tourniquet Band was the last pending line; it was removed from every kit. |
 
@@ -40,6 +42,18 @@ before policy tiers are even consulted.
   (stock held, no supplier yet — prompts only, valid) and `unsourced`
   (deliberately no supplier, permanently — prompts only, valid). Conflating
   the three either blocks runs that should proceed or hides gaps.
+
+## When the supplier has no part numbers
+
+A component's identity is `(supplier, supplier_part_number)`, and Orca
+breaks it: they publish nothing to key on. Such a component carries
+`part_is_internal_reference: true`, which says the part number is **ours**
+and means nothing to the supplier. `validate-config` then requires a
+non-empty `name`, because the name is the only thing that can go on a
+purchase order, and the report leads with the product name and labels the
+reference as ours — otherwise somebody quotes a SKU Orca has never heard
+of, on Shannon's authority. This is the one narrow exception to "never
+invent an identifier": the supplier genuinely has none.
 
 ## How capability constrains Shannon
 

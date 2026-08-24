@@ -93,8 +93,8 @@ supplier decides how it can be bought — NAR and Dynarex via the browser
 (cart staged, never checked out), Amazon Business via a cart link, World
 Richman and printed cards by hand from the report. Three "no supplier"
 situations are kept distinct: **pending** (a mistake to fix — none exist
-today), **internal** (you hold stock loose, like the ~2,000 triangular
-bandages — Shannon reports, never orders), and **unsourced** (deliberately
+today), **internal** (you hold stock loose, like the wall mount — Shannon
+reports, never orders), and **unsourced** (deliberately
 open, like the nitrile gloves you buy from whoever is cheapest — Shannon
 prompts you when stock is low and never picks a supplier for you).
 
@@ -106,6 +106,28 @@ single units and converts to packs as the very last step. She reads pack
 sizes off the live listing the first time she meets a part and asks you to
 confirm; if a listing's pack size later changes, she halts that line and
 flags it instead of ordering.
+
+## A listing you took down is not a product nobody wants
+
+When you run out of something you deactivate its listing, because you
+cannot sell what you have not got. Sales then read zero — and a trailing
+average cannot tell that apart from "nobody wants this". Believe the zero
+and the loop closes on itself: out of stock, delisted, no sales, no
+demand, no reorder, still out of stock. The products worth restocking are
+exactly the ones that would disappear.
+
+So Shannon reads each listing's status. Where **every** listing for
+something is inactive, she puts it under **DEMAND SUPPRESSED** in the
+report rather than in the ordering list: she says what it used to sell
+before the listing came down where the history reaches back that far, says
+plainly that it does not where it doesn't, and never quotes zero as the
+demand. She does not forecast it — that decision is yours — and she adds
+it to the parking lot so it stays in front of you until you restock and
+relist it or retire it.
+
+Something that has **no** Amazon listing at all is a different case and is
+not flagged: 20-314, 20-315 and 25-002 sell on Shopify and direct only, so
+zero on Amazon is simply true.
 
 ## How a weekly run flows
 
@@ -154,10 +176,19 @@ black C-A-T and one HyFin twin pack — summing across every kit that uses a
 part is the whole point; miss the Compact and both lines below are wrong.
 
 **Line 1 — 30-0001, C-A-T tourniquet, black. Class: forecast.** This part
-points in two directions: it has a *sales* ASIN (you sell it standalone on
-Amazon) and a *purchase* ASIN (it can also be bought on Amazon Business).
-Only the **sales** side drives demand — velocity comes from what customers
-buy; the purchase ASIN is just a way to acquire it and creates no demand.
+points in two directions: it is sold standalone on Amazon and it can also
+be bought on Amazon Business. Only the **sales** side drives demand —
+velocity comes from what customers buy; the purchase side is just a way to
+acquire it and creates no demand.
+
+The sales are counted under **Amazon's own SKUs for it**, not under the
+ASIN and not under your part number. Amazon's SKUs are strings like
+`Q3-MWFF-Y7P4` that nothing derives from `30-0001`, so the link lives in
+`config/ithrive/listings.yaml` as plain data, and a part with several
+Amazon SKUs has its sales added up across all of them. The ASIN cannot do
+that job: three C-A-T colourways share three ASINs that North American
+Rescue owns, and no title says which colour is which. The ASIN is printed
+so you recognise the listing, and nothing else.
 - Standalone sales: 540 units in 90 days → 42/week. Over 7 weeks: **294**.
 - Kit sales: full IFAKs 245 × 1 = 245, **plus** Compacts 49 × 1 = 49,
   together **294**.

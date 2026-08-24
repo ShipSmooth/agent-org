@@ -1,0 +1,88 @@
+# config/policy/global.yaml — the rulebook (docs/policy.md).
+#
+# Policy is data, not code. Changing a threshold is a config change.
+# Anything matching no rule resolves to `default_tier` — default deny.
+
+version: 1
+default_tier: 3
+
+thresholds:
+  tier3_escalation:
+    absolute_total_usd: 75000
+    total_vs_trailing_avg_pct: 150
+    line_qty_vs_trailing_avg_x: 2.0
+    total_units_vs_trailing_avg_x: 2.0
+    trailing_window_orders: 8
+    min_history_orders: 4
+  approval_ttl:
+    tier2_hours: 72
+    tier3_days: 7
+  sms_approval_max_tier: 2
+
+# max_tier_this_phase: the ceiling the ActionBroker enforces regardless of
+# any rule below. Phase 1 is read-only by design: the machinery for Tiers
+# 1-3 is real and tested, but a proposal above Tier 0 is refused. Raising
+# this is the deliberate act that opens Phase 2.
+max_tier_this_phase: 0
+
+rules:
+  # ---- Tier 0: silent reads and internal work ----
+  - action: veeqo.read_inventory
+    tier: 0
+  - action: veeqo.read_orders
+    tier: 0
+  - action: veeqo.read_fba_inbound
+    tier: 0
+  - action: gmail.read_order_signals
+    tier: 0
+  - action: nar.read_order_history
+    tier: 0
+  - action: shopify.read_products
+    tier: 0
+  - action: internal.write_draft_report
+    tier: 0
+  - action: internal.write_ops_reminder_report
+    tier: 0
+
+  # ---- Tier 1: internal state, notify after ----
+  - action: internal.enqueue_task
+    tier: 1
+  - action: internal.record_gap_list
+    tier: 1
+  - action: internal.update_forecast_params
+    tier: 1
+  - action: amazon_business.stage_cart
+    tier: 1
+
+  # ---- Tier 2: reaches outside the company / any purchase action ----
+  - action: nar.stage_cart
+    tier: 2
+  - action: dynarex.stage_cart
+    tier: 2
+  - action: notify.email
+    tier: 2
+  - action: notify.sms
+    tier: 2
+  - action: fba.create_inbound_plan
+    tier: 2
+  - action: shopify.update_product
+    tier: 2
+
+  # ---- Tier 3: categorical ----
+  - action: nar.purchase
+    tier: 3
+  - action: shopify.bulk_price_update
+    tier: 3
+  - action: credentials.rotate
+    tier: 3
+
+escalations:
+  - match: {category: purchase}
+    to_tier: 3
+    when_any:
+      - total_usd_gt: ${thresholds.tier3_escalation.absolute_total_usd}
+      - total_vs_trailing_avg_pct_gt: ${thresholds.tier3_escalation.total_vs_trailing_avg_pct}
+      - line_qty_vs_trailing_avg_x_gt: ${thresholds.tier3_escalation.line_qty_vs_trailing_avg_x}
+      - total_units_vs_trailing_avg_x_gt: ${thresholds.tier3_escalation.total_units_vs_trailing_avg_x}
+  - match: {reversible: false}
+    to_tier: 3

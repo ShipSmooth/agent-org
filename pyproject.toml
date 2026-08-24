@@ -13,6 +13,9 @@ dependencies = [
     "python-dotenv==1.1.1",    # .env loading in development
 ]
 
+[project.scripts]
+shannon = "agent_org.cli:main"
+
 [dependency-groups]
 dev = [
     "ruff==0.12.10",
@@ -37,11 +40,15 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# The reports and docstrings are written for a human reader and use the
+# typographic characters the specification uses (– × §). Nothing here is
+# an identifier, so the ambiguous-character rules only fight the prose.
+ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 strict = true
 python_version = "3.12"
-files = ["src"]
+files = ["src", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

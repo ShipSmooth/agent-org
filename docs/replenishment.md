@@ -190,9 +190,9 @@ Definitions and rules:
   aggregates the channels); Amazon Seller Central is a cross-check, never
   the primary.
 - Demand always originates on the **sales** side: a component's standalone
-  velocity is read via the product listing that carries its `sales_asin`
-  (or channel SKU). A `purchase_asin` is an acquisition path and never
-  creates demand (§5).
+  velocity is read on its channel SKUs, summed; its `sales_asin` describes
+  the listing and is never the join. A `purchase_asin` is an acquisition
+  path and never creates demand (§5).
 - Channels are data, not code: Amazon FBA, Amazon FBM, Shopify are
   populated; Walmart Seller Fulfilled and Walmart WFS exist in config with
   zero velocity until they have history. The sums above are over N
@@ -277,8 +277,10 @@ that matter:
   are pending today** (the Latex Tourniquet Band was removed from every
   kit and is no longer a component).
 - `internal` — real stock on hand, no supplier attached yet. Reports and
-  prompts, never carts, never fails the run. Example: the triangular
-  bandage `HMZ-0001` — unbranded, ~2,000 held loose (not NAR 30-0089).
+  prompts, never carts, never fails the run. Today the only internal line
+  is the wall mount, which is `non_stocked` as well. (The triangular
+  bandage was internal until 21 Aug 2026, when it was sourced to Dynarex
+  `3681`, 240 per case.)
 - `unsourced` — deliberately open, permanently. Example: black nitrile
   gloves — Zach buys from whoever is cheapest at the time. Shannon prompts
   when stock is low and **never picks a supplier on his behalf**. A valid
@@ -293,8 +295,55 @@ half the kit BOM lines are NAR.
   builds a staged purchase cart. Lives on the **component** record beside
   `supplier` and `supplier_part_number`.
 - `sales_asin` — a finished product listed on Amazon, sold FBA or FBM. An
-  **output**; read for velocity, which is what creates component demand.
-  Lives on the **product/listing** record.
+  **output**; describes the listing, and is **never the key velocity is
+  read on**. Lives on the **product/listing** record.
+
+**The channel SKU is the join key; the ASIN is description** (settled 24
+Aug 2026, `config/ithrive/listings.yaml`). Velocity comes from Veeqo, and
+Veeqo keys on Zach's own seller-SKU. Amazon's SKU for a product is
+Amazon's — `05-MN0Y-QNA3`, `EA-OASB-I658` — and no pattern derives it from
+`25-001` or `IFAK-CAT-BLACK`, so the mapping can only ever be data.
+
+The C-A-T Gen 7 is why this matters and not merely why it is tidy. It is
+listed under three ASINs, North American Rescue owns those listings, and
+no title states a colour, so an ASIN can never say black from orange from
+blue. Seven seller-SKUs can, and do.
+
+It follows that:
+
+- One component may have **several channel SKUs**; its velocity is the
+  **sum across all of them**. A scalar cannot hold that.
+- Several channel SKUs may **share one ASIN**. Joining on the ASIN would
+  merge three colourways into one line.
+- Once a component is mapped in `listings.yaml`, the mapping is the answer
+  **even when the answer is zero**. Shannon does not fall through to an
+  ASIN, because falling through is how the colourways get merged back.
+- The ASIN is still printed, so a human can recognise the listing.
+
+**A listing's status is data, and an inactive listing is not zero demand.**
+Zach takes a listing down when he is out of stock — he cannot sell what he
+has not got — and a trailing average cannot tell "nobody wants this" from
+"he could not sell it". Left alone that closes a loop: out of stock →
+delisted → no sales → no demand → no reorder → still out of stock, and the
+products most worth restocking are exactly the ones that get buried.
+
+So where **every** listing for a kit or component is inactive, Shannon
+reports it under **DEMAND SUPPRESSED**, never as an ordinary zero and
+never by leaving it out:
+
+- She does not forecast it. Suppressed is surfaced, not predicted.
+- Where a longer sales history reaches back to before the listing came
+  down, she reports that figure and **labels it historical**. Where it does
+  not, she says so. Zero is not a substitute.
+- Where the line still sells away from Amazon, that figure is reported as
+  a **floor**, not as the demand.
+- She adds it to the **parking lot automatically**: only Zach can decide
+  whether to restock and relist, or discontinue.
+
+A kit with **no listing at all** is a different thing and is not
+suppressed: `20-314`, `20-315` and `25-002` sell on Shopify and direct
+only, so zero on Amazon is structurally true and is never reported as a
+gap.
 
 All three cases are representable: a kit has a `sales_asin` and no
 `purchase_asin` (assembled, not bought); a marker has a `purchase_asin` and
@@ -567,16 +616,36 @@ floor = 2 × (4 + 2) = 12 → allocatable 28. FBA target = 8 × 29 = 232; FBA
 on-hand 80, inbound 0 → want 152, clamped to **send 28 now**; the rest
 comes from the 125-kit build. Walmart reserve 0 (no history).
 
-**Step 9 — FBA inbound plan** (after build, sending target 240): B ∈
-[5,10] → **B = 5 boxes, Q = 48 per box**, 5 × 48 = 240 exact (ties break
-toward fewer boxes, §8). The `channels: [fba]` BOM lines (suffocation
-bags, labels) are consumed against this 240, not against total sales.
+**Step 9 — FBA inbound plan:** the sending target is Step 8's answer,
+**28 units now**. Every box must be packed identically and the planner
+never overships. Taken alone, 28 units give **B = 7 boxes, Q = 4 per
+box** — an exact fit, nothing held back; fewer boxes only wins a tie, and
+zero error has nothing to tie against. But B is one number for the whole
+shipment, and the Compact IFAK is sending 5 units in the same one: at B =
+7 the Compact line can only send 0 (7 × 1 = 7 overships its 5), for a
+total error of 5, while **B = 5** sends 5 × 5 = 25 of the full IFAK and 5
+× 1 = 5 Compact, total error 3. So the real plan is **5 boxes**, with 3
+full IFAK units held back — not because 28 cannot be hit, but because
+hitting it would strand the Compact line (§8). The
+`channels: [fba]` BOM lines (suffocation bags, labels) are consumed
+against the quantity actually being sent, not against total sales.
+
+> **Corrected 21 Aug 2026 (was 240).** Earlier drafts of this step said
+> the sending target was 240 and planned 5 boxes of 48. That figure is
+> stale: it is 8 weeks × 30/week, and FBA velocity in §10 is 29/week, so
+> the target is 8 × 29 = 232, of which 80 is already at FBA — a want of
+> 152, clamped by Step 8's 28 allocatable units. Nothing in the current
+> figures produces 240; even adding the entire 125-kit build reaches 153.
+> **The operational answer is 28.** The box planner is still tested
+> against 240 → 5 × 48 as an arithmetic case of its own (a round number
+> that exercises the exact-fit tie-break), but 240 is not a sending
+> target and must not be read as one.
 
 **Step 10 — supplier split:** 30-0001 (600) + 10-0042 (750) + ZZ-0034 (65
 two-packs) → NAR draft PO, staged as a narescue.com cart on approval
 (Tier 2), freight quote captured at checkout and reported. Dynarex 3161
-(320) → staged dynarex.com cart (Tier 2). `internal` (triangular bandage
-HMZ-0001) and `unsourced` (gloves) lines → gap-list prompts. The wall
+(320) and the triangular bandage 3681 → staged dynarex.com cart (Tier 2),
+in cases of 240. `unsourced` (gloves) lines → gap-list prompts. The wall
 mount → nowhere, by class.
 
 ## 11. Reconciliation with the working NAR reorder procedure
@@ -652,10 +721,11 @@ seen.
 Every report carries a **persistent, numbered parking lot** of unresolved
 issues — items neither fixable by Shannon nor blocking the whole run.
 Each item shows: ID (`PL-n`), description, what it blocks, and how long it
-has been open. Items are seeded in `config/ithrive/boms.yaml` (PL-1
-through PL-8 today: pouch sourcing, triangular-bandage supplier, SAM XT
-supplier, instruction-card mapping, glove-roll bag quantity, Express
-wall-mount SKU, Dynarex/World Richman lead times, FBA alias SKUs).
+has been open. Items are seeded in `config/ithrive/boms.yaml` — three
+today, after the 21 Aug 2026 sourcing answers closed five: **PL-1** Orca
+Tactical's lead time and the real Coyote/Multicam part numbers, **PL-4**
+the Basic-kit instruction card, and **PL-8** the Seller Central export
+that fills in the FBA aliases and sales ASINs.
 Shannon **adds** an item automatically when she hits an unresolvable line
 mid-run; she **removes** one only when Zach explicitly clears it. The
 parking lot never silently shrinks — that is the point.
@@ -671,11 +741,16 @@ stack traces**. Checks:
   `units_per_purchase_unit` (or an explicit `null` under discovery mode).
 - Every Amazon ASIN is exactly 10 alphanumeric characters.
 - Every `channels:` value names a configured channel.
-- Every BOM line references a component record — the committed file
-  deliberately contains one violation (`own_printed / CARD-TODO`,
-  instruction cards, parking-lot PL-4) that this check must catch.
-- Every kit alias maps to a real channel SKU (the `TODO` FBA aliases fail
-  until PL-8 is resolved).
+- Every BOM line references a component record. (The `own_printed /
+  CARD-TODO` dangling reference that used to be committed deliberately
+  was resolved on 21 Aug 2026; the check is proved against a fixture
+  config instead, never against production configuration.)
+- Every kit alias maps to a real channel SKU. An alias pointing at a
+  channel this business does not sell on is an error; an alias still
+  marked `TODO` is a **warning** naming the kit, the channel, the file
+  and the line — the gap is tracked as PL-8 and it under-counts that
+  kit's sales, but it does not stop a run that is useful for the other
+  kits.
 - `reorder_point ≤ reorder_target` (warning).
 - Every recipient role referenced by any notification rule (email or SMS)
   is mapped to a real address/number for this entity in

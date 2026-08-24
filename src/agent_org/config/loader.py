@@ -212,6 +212,15 @@ def load_entity(paths: ConfigPaths, entity_id: str) -> EntityConfig:
         shannon_config=str(raw.get("shannon_config", "")),
         policy_config=str(raw.get("policy_config", "")),
         listings_config=str(raw.get("listings_config", "")),
+        excluded_veeqo_channels=tuple(
+            str(item).strip()
+            for item in _require_list(
+                raw.get("excluded_veeqo_channels", []),
+                "excluded_veeqo_channels",
+                raw.loc_of("excluded_veeqo_channels"),
+            )
+            if str(item).strip()
+        ),
     )
 
 

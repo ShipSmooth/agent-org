@@ -280,6 +280,14 @@ class ShannonConfig:
         return tuple(found)
 
 
+# What a channel says when it exists in the business but not yet in Veeqo.
+# Distinct from a TBD placeholder, which means "nobody has looked yet" and
+# stops a live run: this one means "someone looked, and there is nothing
+# there". Veeqo cannot report a channel it does not have, so no order can
+# go uncounted; the day one appears, its name is unknown and the run stops.
+NOT_CONNECTED = "not_connected"
+
+
 @dataclass(frozen=True)
 class Channel:
     name: str
@@ -291,6 +299,10 @@ class Channel:
     # channel Veeqo reports which is not named here stops the run rather
     # than being guessed at: the guess would move stock to Amazon.
     veeqo_channel: str | None = None
+
+    @property
+    def in_veeqo(self) -> bool:
+        return (self.veeqo_channel or "").strip() != NOT_CONNECTED
 
 
 @dataclass(frozen=True)
@@ -314,6 +326,11 @@ class EntityConfig:
     shannon_config: str
     policy_config: str
     listings_config: str = ""
+    # Veeqo channels this business has and deliberately does not count.
+    # Named, not silently dropped: an unnamed channel still stops the run,
+    # so "we decided to ignore this" can never be confused with "nobody has
+    # told Shannon what this is".
+    excluded_veeqo_channels: tuple[str, ...] = ()
 
     def channel(self, name: str) -> Channel | None:
         for channel in self.channels:

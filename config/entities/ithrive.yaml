@@ -71,11 +71,18 @@ channels:
 
 # Channels Veeqo does report and Shannon deliberately does not count.
 # Reorder demand is US only by Zach's decision (24 Aug 2026): Canada and
-# Mexico FBA/FBM sales do not create demand here. The list is empty because
-# nobody has read those channels' exact Veeqo names off the account. Until
-# they are here, an order on one of them is an unnamed channel and stops the
-# run — loudly wrong rather than quietly counted (PL-12).
-excluded_veeqo_channels: []
+# Mexico FBA/FBM sales do not create demand here. All four are live and
+# selling, so without this the first live run would stop on the first
+# Canadian order — correct, but a crash where a decision belongs.
+#
+# Every line here is demand Shannon can see and is told to ignore, so the
+# report names them. A channel that is neither listed here nor mapped
+# above is still unknown and still stops the run.
+excluded_veeqo_channels:
+  - "Amazon Canada FBA"
+  - "Amazon Canada"
+  - "Amazon Mexico FBA"
+  - "Amazon Mexico"
 
 suppliers_config: config/ithrive/suppliers.yaml
 boms_config: config/ithrive/boms.yaml

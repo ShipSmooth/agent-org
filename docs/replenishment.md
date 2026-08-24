@@ -518,6 +518,35 @@ then FBA, then Walmart reserve. Judgment call: FBA is ~the revenue engine,
 but an FBM stockout is an immediate defect on live orders, so the floor
 wins. The floor defaults to 2 weeks *(param)*.
 
+### 7.1 A family's send divides by demand — stated rule, not an accident
+
+A kit family ships to FBA as one shipment, and `fba_send` above is
+computed for the family, not the colourway. **How that one quantity
+divides across colourways is a rule of the business, and the rule is
+that it divides in proportion to each colourway's own demand.** Black
+outsells green, so black gets more. Confirmed by Zach, 24 Aug 2026.
+
+```
+share(k) = fba_send(family) × demand(k) ÷ Σ demand(family)
+```
+
+Whole units ship, so each share is rounded down and the units the
+rounding leaves over go to the colourways it shortchanged most. The
+shares therefore always sum to exactly `fba_send(family)`: no unit
+appears, and none goes missing between the shipment and the FBA prep
+items packed with those units, which follow the same split.
+
+Where a family has demand nowhere, there is no ratio to apply and the
+whole quantity goes to the first colourway rather than being dropped.
+
+Worked, two colourways at unequal velocities and a send of 28:
+
+```
+black  demand 30 units   28 × 30 ÷ 40 = 21.0  → 21
+green  demand 10 units   28 × 10 ÷ 40 =  7.0  →  7
+                                        total 28   (ratio 3 : 1, as sold)
+```
+
 ## 8. FBA inbound planning — constraint satisfaction
 
 Amazon requires 5–10 boxes per shipment, every box packed identically.

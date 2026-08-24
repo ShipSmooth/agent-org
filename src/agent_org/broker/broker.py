@@ -120,7 +120,8 @@ class ActionBroker:
             )
             raise BrokerRefusal(action_type, reason, tier=decision.tier)
 
-        key = fingerprint(self.entity_id, action_type, payload, schedule_slot, attempt_salt)
+        salt = self._salt_for(attempt_salt, decision.tier, action_type, task_id)
+        key = fingerprint(self.entity_id, action_type, payload, schedule_slot, salt)
         existing = self._find_by_key(key)
         if existing is not None:
             proposal_id, status, result = existing
@@ -183,6 +184,47 @@ class ActionBroker:
             result=result,
             reasons=decision.reasons,
         )
+
+    def _salt_for(
+        self,
+        attempt_salt: str,
+        tier: int,
+        action_type: str,
+        task_id: str,
+    ) -> str:
+        """A deliberate repeat may repeat a Tier 0 action, and nothing else.
+
+        `shannon run --again` re-reads and re-reports, and a report is a file
+        on Zach's own machine. Everything above Tier 0 has an effect he cannot
+        take back — a cart staged twice, an email sent twice — so the salt is
+        dropped there and the fingerprint stays exactly what it was. The rule
+        lives at the doorway rather than in the caller, because the caller is
+        the thing most likely to be wrong.
+        """
+        if not attempt_salt or tier <= 0:
+            return attempt_salt
+        ignored = self.audit.intent(
+            "proposal.fingerprint",
+            {
+                "action_type": action_type,
+                "attempt_salt_ignored": attempt_salt,
+                "tier": tier,
+            },
+            task_id=task_id,
+        )
+        self.audit.outcome(
+            ignored,
+            {
+                "kept_original_fingerprint": True,
+                "reason": (
+                    "A re-run may regenerate a report. It may not repeat an action "
+                    "with an effect outside this machine, so this one keeps its "
+                    "original fingerprint and happens exactly once."
+                ),
+            },
+            task_id=task_id,
+        )
+        return ""
 
     def _check_capability(
         self,

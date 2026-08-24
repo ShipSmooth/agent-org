@@ -127,8 +127,13 @@ def test_amazon_sales_are_joined_on_amazons_own_sku(live_config_report: str) -> 
     """The sample exports key Amazon rows by Amazon's SKUs, which look
     nothing like Zach's. If the join broke, those sales would vanish rather
     than fail loudly, so both sides are asserted: the FBA prep charged
-    against 30-0001's Amazon sales, and an ASIN carried as description."""
-    assert "30-0001: 6 per box" in live_config_report
+    against 30-0001's Amazon sales, and an ASIN carried as description.
+
+    The figures come from summing Amazon's SKUs and from nowhere else:
+    the row keyed 30-0001 in the sample export is a decoy of 999, so a
+    report built on it would be visibly, enormously wrong. See
+    tests/test_channel_sku_join_is_load_bearing.py."""
+    assert "30-0001: 4 per box" in live_config_report
     assert "listed on Amazon under: B006X64PIS" in live_config_report
 
 
@@ -335,6 +340,27 @@ def test_the_command_line_run_writes_a_report_a_person_can_open(
     assert second == 1
     assert "already been carried out" in again
     assert "Traceback" not in again
+
+    # And `--again` does the harmless thing the guard was blocking, saying
+    # plainly which report it replaced rather than quietly overwriting one.
+    third = main(
+        [
+            "--config-root",
+            str(config_root),
+            "run",
+            "--fixtures",
+            str(DATA),
+            "--output",
+            str(tmp_path),
+            "--again",
+        ]
+    )
+    rerun = capsys.readouterr().out
+    assert third == 0, rerun
+    assert "This replaces the report written at" in rerun
+    assert "superseded" in rerun
+    kept = list(tmp_path.glob("*.superseded-*"))
+    assert kept, rerun
 
 
 def test_the_task_is_one_business_occurrence_a_week() -> None:

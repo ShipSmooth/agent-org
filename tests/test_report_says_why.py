@@ -71,6 +71,21 @@ def test_every_covered_line_names_the_demand_it_is_covered_against(quiet: str) -
         assert "demand of" in reason or "against a reorder point of" in reason, reason
 
 
+def test_a_covered_line_shows_the_three_figures_that_make_up_its_total(
+    quiet: str,
+) -> None:
+    """Coverage is on hand plus on order plus in transit, and the line under
+    it has to show all three. It used to print two, which is how a reader
+    checking 54 + 150 against 264 concludes the arithmetic is broken.
+
+    10-0042 is the case: three different figures, and the sum is not
+    reachable from any two of them."""
+    covered = _section(quiet, COVERED)
+    body = covered.split("nar/10-0042", 1)[1]
+    assert "against 264 on hand, on order and in transit" in body
+    assert "on hand 54, on order 150, in transit 60" in body
+
+
 def test_a_part_with_no_threshold_is_reported_as_unassessable(quiet: str) -> None:
     """A reorder-point part with no reorder point has no line to be below.
     Twelve of them used to sit silently under "covered"."""

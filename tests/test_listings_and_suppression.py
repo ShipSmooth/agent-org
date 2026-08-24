@@ -27,11 +27,12 @@ from agent_org.config.listings import ACTIVE, INACTIVE
 from agent_org.config.loader import load_config
 from agent_org.config.models import ComponentClass, ComponentKey, LoadedConfig
 from agent_org.config.validate import validate
-from agent_org.integrations.reads import OrderSignals, SalesVelocity
+from agent_org.integrations.reads import OrderSignals, SalesVelocity, StockPosition
 from agent_org.shannon.calculator import (
     ComponentPlan,
     ReplenishmentCalculator,
     ReplenishmentResult,
+    Sufficiency,
 )
 from agent_org.shannon.report import ReportContext, render
 
@@ -268,6 +269,33 @@ def test_where_history_does_not_reach_back_shannon_says_so_rather_than_zero(
     line = next(item for item in result.suppressed if item.subject == "25-010")
     assert line.historical_weekly is None
     assert "no sales history reaches back" in _report(config, result)
+
+
+def test_a_line_at_zero_for_several_reasons_prints_all_of_them(
+    config: LoadedConfig,
+) -> None:
+    """Orange C-A-T is at zero three times over, and each is a different thing.
+
+    It is sold standalone and sold none; one kit that uses it (25-010) is
+    demand-suppressed, which is a listing problem; the other five simply
+    sold nothing, which is not. Shown only the first, a reader concludes
+    the wrong thing about the other two.
+    """
+    result = ReplenishmentCalculator(
+        config=config,
+        stock={"30-0023": StockPosition(sku="30-0023", warehouse_available=500, fba_sellable=0)},
+        velocity={},
+        inbound={},
+        on_order={},
+        historical_velocity=None,
+    ).calculate()
+    plan = next(item for item in result.components if item.key.part == "30-0023")
+    reason = plan.sufficiency_reason
+    assert plan.sufficiency is Sufficiency.NO_DEMAND, reason
+    assert "sold standalone and sold nothing" in reason
+    assert "demand-suppressed (25-010)" in reason
+    assert "the kits that use it (20-314, 20-315, 25-001, 25-002, 26-001)" in reason
+    assert reason.count("; and ") == 2, reason
 
 
 # --- a part number that is ours, not the supplier's -----------------------

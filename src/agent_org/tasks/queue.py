@@ -161,6 +161,33 @@ class TaskQueue:
         self.audit.outcome(intent, {"attempts": claimed.attempts}, task_id=claimed.id)
         return claimed
 
+    def reopen(self, kind: str, schedule_slot: str, reason: str) -> Task | None:
+        """Put a finished slot back in the queue so it can be run again.
+
+        This is the deliberate act behind `shannon run --again`, and it is
+        deliberately narrow: it does not touch action fingerprints, so
+        anything already staged or sent stays staged or sent exactly once.
+        Returns None when there is no finished run of that slot to repeat.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {COLUMNS} FROM tasks
+                 WHERE entity_id = %s AND kind = %s AND schedule_slot = %s
+                   AND state <> 'RUNNING'
+                 FOR UPDATE SKIP LOCKED
+                """,
+                (self.entity_id, kind, schedule_slot),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        task = _row_to_task(row)
+        if task.state is TaskState.QUEUED:
+            return task
+        self._finish(task, TaskState.QUEUED, None, {"reopened_because": reason})
+        return self.get(task.id)
+
     def heartbeat(self, task: Task) -> None:
         self.conn.execute(
             "UPDATE tasks SET heartbeat_at = now(), updated_at = now() WHERE id = %s",

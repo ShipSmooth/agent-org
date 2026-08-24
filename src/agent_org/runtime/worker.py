@@ -42,10 +42,26 @@ class RunSummary:
 
     @property
     def report_path(self) -> str | None:
+        return self._result("file_path")
+
+    @property
+    def superseded_report_id(self) -> str | None:
+        """The report this run replaced, when it was a re-run of a week."""
+        return self._result("supersedes")
+
+    @property
+    def superseded_written_at(self) -> str | None:
+        return self._result("supersedes_written_at")
+
+    @property
+    def superseded_path(self) -> str | None:
+        return self._result("supersedes_file_path")
+
+    def _result(self, key: str) -> str | None:
         if self.outcome is None or self.outcome.broker_outcome is None:
             return None
-        path = self.outcome.broker_outcome.result.get("file_path")
-        return str(path) if path else None
+        value = self.outcome.broker_outcome.result.get(key)
+        return str(value) if value else None
 
 
 def fixture_readers(fixtures: Path) -> tuple[InventoryReader, OrderSignalReader]:
@@ -57,11 +73,18 @@ def fixture_readers(fixtures: Path) -> tuple[InventoryReader, OrderSignalReader]
 def previous_snapshot(
     conn: psycopg.Connection[tuple[object, ...]], entity_id: str
 ) -> ConfigSnapshot | None:
+    """The configuration the last report was written against.
+
+    Superseded reports are excluded: a re-run compares against the week
+    that was actually reported, not against the copy it just replaced,
+    which would always show "nothing changed".
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT parameters FROM reports
              WHERE entity_id = %s AND kind = 'replenishment'
+               AND superseded_by IS NULL
              ORDER BY created_at DESC
              LIMIT 1
             """,
@@ -80,8 +103,15 @@ def run_replenishment(
     fixtures: Path,
     output_dir: Path,
     now: datetime | None = None,
+    again: bool = False,
 ) -> RunSummary:
-    """Claim (or create) this week's task and run it to a written report."""
+    """Claim (or create) this week's task and run it to a written report.
+
+    With `again`, a week that has already been run is run again: the reading
+    and the arithmetic happen a second time and the new report supersedes
+    the old one. Nothing outside this machine is repeated — the broker keeps
+    the fingerprint of any action above Tier 0 exactly as it was.
+    """
     moment = now or datetime.now(tz=UTC)
     entity_id = config.entity_id
     audit = AuditLog(conn=conn, entity_id=entity_id, actor="shannon")
@@ -89,10 +119,21 @@ def run_replenishment(
     slot = schedule_slot(SHANNON_REPLENISHMENT, moment)
     queue.enqueue(SHANNON_REPLENISHMENT, slot)
     task = queue.claim((SHANNON_REPLENISHMENT,), schedule_slot=slot)
+    if task is None and again:
+        task = queue.reopen(
+            SHANNON_REPLENISHMENT,
+            slot,
+            "`shannon run --again`: report regenerated on request.",
+        )
+        task = (
+            queue.claim((SHANNON_REPLENISHMENT,), schedule_slot=slot) if task is not None else None
+        )
     if task is None:
         raise RunAlreadyDone(
             f"This week's replenishment run ({slot}) has already been carried out. "
-            "Its report is in the reports folder and in the database."
+            "Its report is in the reports folder and in the database. "
+            "Run `shannon run --again` to work the week out afresh and replace "
+            "that report; nothing is sent or ordered either way."
         )
 
     registry = build_registry(ReportWriter(conn=conn, entity_id=entity_id, output_dir=output_dir))
@@ -118,6 +159,10 @@ def run_replenishment(
             task_id=task.id,
             schedule_slot=slot,
             previous_snapshot=previous_snapshot(conn, entity_id),
+            # The attempt number, not the week: the week is the business
+            # occurrence and stays the fingerprint's key. The broker ignores
+            # this for anything above Tier 0.
+            attempt_salt=f"attempt-{task.attempts}" if task.attempts > 1 else "",
         )
     except (ReadFailure, BrokerRefusal, BudgetExceeded) as exc:
         queue.fail(task, str(exc))

@@ -202,7 +202,13 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
         for plan in group:
             add(f"{_heading(plan)}")
             add(f"      {plan.sufficiency_reason}.")
-            add(f"      on hand {plan.on_hand}, on order {plan.on_order}")
+            # All three, because the figure above is their sum: two of them
+            # printed under a total made of three is how a reader checks the
+            # arithmetic and finds it apparently wrong.
+            add(
+                f"      on hand {plan.on_hand}, on order {plan.on_order}, "
+                f"in transit {plan.in_transit}"
+            )
         add("")
     if not quiet:
         add("  Every line in the parts list needs something ordered.")
@@ -260,6 +266,14 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
                 f"FBA target {alloc.fba_target} (has {alloc.fba_on_hand}, inbound "
                 f"{alloc.fba_inbound}) → send {alloc.fba_send}"
             )
+            if alloc.fba_send > 0 and len(kit.members) > 1:
+                # The send is one shipment for the family, divided by how
+                # fast each colourway sells. Zach packs the boxes, so he
+                # needs the split, not just the total.
+                split = ", ".join(
+                    f"{member.kit_group} {member.fba_send_share}" for member in kit.members
+                )
+                add(f"      split of that send, in proportion to demand: {split}")
         add("")
 
     # An inactive listing is not zero demand: Zach takes a listing down when he

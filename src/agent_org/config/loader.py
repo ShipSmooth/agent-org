@@ -250,7 +250,11 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
                         ),
                     )
                 )
-        if "units_per_purchase_unit" not in entry:
+        # A non-stocked line is never bought, so it has no purchase unit.
+        if (
+            "units_per_purchase_unit" not in entry
+            and entry.get("class") != ComponentClass.NON_STOCKED.value
+        ):
             findings.append(
                 error(
                     f"Component {component_key} does not say how many sellable units are in one "
@@ -282,6 +286,7 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
             reorder_target=_int_or_none(entry.get("reorder_target")),
             purchase_asin=_str_or_none(entry.get("purchase_asin"))
             or (component_key.part if component_key.supplier == "amazon_business" else None),
+            sales_asin=_str_or_none(entry.get("sales_asin")),
             cover_target_weeks=_fraction_or_none(entry.get("cover_target_weeks")),
             safety_stock_weeks=_fraction_or_none(entry.get("safety_stock_weeks")),
             loc=entry.loc,
@@ -308,6 +313,8 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
         kits[kit_group] = Kit(
             kit_group=kit_group,
             name=str(entry.get("name", kit_group)),
+            family=str(entry.get("family", kit_group)),
+            family_name=_str_or_none(entry.get("family_name")),
             aliases=aliases,
             lines=tuple(lines),
             build_blocked=_str_or_none(entry.get("build_blocked")),

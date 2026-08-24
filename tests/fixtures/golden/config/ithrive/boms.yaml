@@ -1,0 +1,172 @@
+# Golden fixture BOM — the worked example of docs/replenishment.md §10 and
+# docs/plain-english-overview.md, with nothing left unresolved so a full run
+# can complete. Every component class and every edge the spec introduces is
+# present: forecast, reorder_point, non_stocked, ops_consumable, internal,
+# unsourced, a `channels: [fba]` line, a component with both a purchase_asin
+# and a sales_asin, and a pack size that is not 1.
+
+bom_version: golden-2026-08-20
+
+suppliers:
+  nar:
+    name: North American Rescue
+    acquisition: browser
+    lead_time_weeks: 3
+    credentials_env_prefix: NAR_
+  dynarex:
+    name: Dynarex Corporation
+    acquisition: browser
+    lead_time_weeks: 2
+    credentials_env_prefix: DYNAREX_
+  amazon_business:
+    name: Amazon Business
+    acquisition: cart_url
+    lead_time_weeks: 1
+  world_richman:
+    name: World Richman Corporation
+    acquisition: purchase_order
+    lead_time_weeks: 6
+    part_number_format: "<kit_sku>-bag"
+  internal:
+    name: Held loose, no current reorder path
+    acquisition: none
+  unsourced:
+    name: Deliberately unsourced — buy from cheapest supplier at the time
+    acquisition: none
+
+pack_size_policy:
+  mode: discover_and_confirm
+  on_mismatch: halt_line_and_flag
+
+components:
+
+  # ---- forecast, singles, MOQ 400/200; sold as well as bought -------------
+  - {supplier: nar, part: "30-0001", name: "C-A-T Tourniquet Gen 7, Black",
+     class: forecast, units_per_purchase_unit: 1, moq_min: 400, moq_increment: 200,
+     purchase_asin: "B00CAT0001", sales_asin: "B00CAT0002",
+     note: "Only the sales side drives demand; the purchase side never does."}
+
+  # ---- forecast, singles, MOQ 750/150 -------------------------------------
+  - {supplier: nar, part: "10-0042", name: "HyFin Vent Compact Chest Seal, Twin Pack",
+     class: forecast, units_per_purchase_unit: 1, moq_min: 750, moq_increment: 150}
+
+  # ---- forecast, pack size 2, purchase side only --------------------------
+  - {supplier: nar, part: "ZZ-0034", name: "Nasopharyngeal Airway 28F w/ Lube (Two Pack)",
+     class: forecast, units_per_purchase_unit: 2, purchase_unit_name: two-pack}
+
+  # ---- forecast, standalone only, currently oversold (negative available) --
+  - {supplier: nar, part: "30-0052", name: "Compressed Gauze 4.5in x 4.1yd",
+     class: forecast, units_per_purchase_unit: 1}
+
+  # ---- reorder_point ------------------------------------------------------
+  - {supplier: dynarex, part: "3161", name: "Krinkle Gauze Roll, Sterile",
+     class: reorder_point, units_per_purchase_unit: 1,
+     reorder_point: 100, reorder_target: 400}
+
+  # ---- non_stocked: described in the kit, never bought --------------------
+  - {supplier: world_richman, part: "WALL-MOUNT-01", name: "Essential wall mount bracket",
+     class: non_stocked}
+
+  # ---- ops_consumable: calendar reminder only, never a purchase line ------
+  - {supplier: amazon_business, part: "B0822QWLX2", name: "Shipping tape, 3in",
+     class: ops_consumable, units_per_purchase_unit: 6}
+
+  # ---- internal: real stock, no supplier — gap list, never a cart ---------
+  - {supplier: internal, part: "HMZ-0001", name: "Triangular bandage",
+     class: forecast, units_per_purchase_unit: 1}
+
+  # ---- unsourced: deliberately open — gap list, never a cart --------------
+  - {supplier: unsourced, part: "GLOVE-BLK-L", name: "Nitrile gloves, black, large",
+     class: forecast, units_per_purchase_unit: 1}
+
+  # ---- FBA prep, consumed by the `channels: [fba]` line below -------------
+  - {supplier: amazon_business, part: "B07X6QZ53J", name: "FBA bag with suffocation warning (large)",
+     class: reorder_point, units_per_purchase_unit: 1,
+     reorder_point: 200, reorder_target: 1000}
+  - {supplier: amazon_business, part: "B0756SVPMF", name: "FBA item label, 30 per sheet",
+     class: reorder_point, units_per_purchase_unit: 30,
+     reorder_point: 300, reorder_target: 1200}
+
+  # ---- MOLLE pouches: two colourways are out of stock (PL-1) --------------
+  - {supplier: world_richman, part: "IFAK-CAT-BLACK-bag", name: "MOLLE pouch, Black",
+     class: reorder_point, units_per_purchase_unit: 1, reorder_point: 200, reorder_target: 1500}
+  - {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", name: "MOLLE pouch, Green",
+     class: reorder_point, units_per_purchase_unit: 1, reorder_point: 200, reorder_target: 1500}
+  - {supplier: world_richman, part: "IFAK-CAT-COYOTE-bag", name: "MOLLE pouch, Coyote",
+     class: reorder_point, units_per_purchase_unit: 1, reorder_point: 200, reorder_target: 1500}
+  - {supplier: world_richman, part: "IFAK-CAT-MULTICAM-bag", name: "MOLLE pouch, Multicam",
+     class: reorder_point, units_per_purchase_unit: 1, reorder_point: 200, reorder_target: 1500}
+  - {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", name: "MOLLE pouch, Compact",
+     class: reorder_point, units_per_purchase_unit: 1, reorder_point: 200, reorder_target: 1500}
+
+kits:
+
+  # The four colourways are one family: forecast, built and shipped together.
+  IFAK-CAT-BLACK:
+    name: IFAK with CAT Gen 7 & HyFin — Black
+    family: IFAK-CAT
+    family_name: IFAK with CAT Gen 7 & HyFin (all colourways)
+    aliases: {fba: IFAK-CAT-BLACK-FBA, fbm: IFAK-CAT-BLACK, shopify: IFAK-CAT-BLACK}
+    components: &ifak_common
+      - {supplier: nar, part: "30-0001", qty: 1}
+      - {supplier: nar, part: "10-0042", qty: 1}
+      - {supplier: nar, part: "ZZ-0034", qty: 1}
+      - {supplier: internal, part: "HMZ-0001", qty: 1}
+      - {supplier: unsourced, part: "GLOVE-BLK-L", qty: 2}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+    pouch: {supplier: world_richman, part: "IFAK-CAT-BLACK-bag", qty: 1}
+
+  IFAK-CAT-GREEN:
+    name: IFAK with CAT Gen 7 & HyFin — Green
+    family: IFAK-CAT
+    aliases: {fba: IFAK-CAT-GREEN-FBA, fbm: IFAK-CAT-GREEN, shopify: IFAK-CAT-GREEN}
+    components: *ifak_common
+    pouch: {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", qty: 1}
+
+  IFAK-CAT-COYOTE:
+    name: IFAK with CAT Gen 7 & HyFin — Coyote
+    family: IFAK-CAT
+    aliases: {fba: IFAK-CAT-COYOTE-FBA, fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
+    components: *ifak_common
+    pouch: {supplier: world_richman, part: "IFAK-CAT-COYOTE-bag", qty: 1}
+
+  IFAK-CAT-MULTICAM:
+    name: IFAK with CAT Gen 7 & HyFin — Multicam
+    family: IFAK-CAT
+    aliases: {fba: IFAK-CAT-MULTICAM-FBA, fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
+    components: *ifak_common
+    pouch: {supplier: world_richman, part: "IFAK-CAT-MULTICAM-bag", qty: 1}
+
+  # Its own family: one SKU, no colourways. Contains no airway.
+  IFAK-CAT-COMPACT:
+    name: Compact IFAK
+    family: IFAK-CAT-COMPACT
+    aliases: {fba: IFAK-CAT-COMPACT-FBA, fbm: IFAK-CAT-COMPACT, shopify: IFAK-CAT-COMPACT}
+    components:
+      - {supplier: nar, part: "30-0001", qty: 1}
+      - {supplier: nar, part: "10-0042", qty: 1}
+      - {supplier: internal, part: "HMZ-0001", qty: 1}
+      - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
+    pouch: {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", qty: 1}
+
+  # Zero velocity: it exists here to hold the non_stocked wall mount and the
+  # reorder_point gauze, neither of which may ever be forecast.
+  ESSENTIAL-WALL:
+    name: Essential Wall Mounted
+    family: ESSENTIAL-WALL
+    aliases: {fbm: ESSENTIAL-WALL, shopify: ESSENTIAL-WALL}
+    components:
+      - {supplier: world_richman, part: "WALL-MOUNT-01", qty: 1}
+      - {supplier: dynarex, part: "3161", qty: 2}
+
+standalone_fba_prep:
+  - {applies_to: all_fba_units, consumes: {supplier: amazon_business, part: "B0756SVPMF", qty: 1},
+     note: "FBA item label, one per unit sent."}
+
+parking_lot:
+  - id: PL-1
+    item: "Source Multicam and Coyote MOLLE pouches"
+    detail: >
+      Both colourways are at zero pouch stock, so neither can be assembled
+      however many components are bought.
+    owner: zach

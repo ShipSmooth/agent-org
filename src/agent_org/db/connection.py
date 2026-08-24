@@ -52,6 +52,19 @@ def connect(dsn: str) -> psycopg.Connection[tuple[object, ...]]:
     return psycopg.connect(dsn, autocommit=False)
 
 
+def set_app_password(conn: psycopg.Connection[tuple[object, ...]], password: str) -> None:
+    """Give the application role its password, from the environment.
+
+    Migrations cannot carry it: a password in a versioned SQL file is a
+    password in the repository.
+    """
+    conn.execute(
+        sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(
+            sql.Identifier(APP_ROLE), sql.Literal(password)
+        )
+    )
+
+
 @contextmanager
 def entity_session(
     conn: psycopg.Connection[tuple[object, ...]], entity_id: str
@@ -72,4 +85,5 @@ __all__ = [
     "DatabaseSettings",
     "connect",
     "entity_session",
+    "set_app_password",
 ]

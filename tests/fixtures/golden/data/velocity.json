@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "Trailing 90 days. Weekly velocity is units_sold x 7 / 90, kept exact.",
+    "The four full-IFAK colourways add up to 450 units (35/week); the",
+    "Compact IFAK to 90 (7/week). 30-0001 sells standalone under its",
+    "sales_asin B00CAT0002 - its purchase_asin never appears here."
+  ],
+  "window_days": 90,
+  "rows": [
+    {"sku": "B00CAT0002", "units_sold": "540 (500)"},
+    {"sku": "10-0042", "units_sold": 270},
+
+    {"sku": "IFAK-CAT-BLACK", "units_sold": 30, "by_channel": {"fbm": 20, "shopify": 10}},
+    {"sku": "IFAK-CAT-GREEN", "units_sold": 23, "by_channel": {"fbm": 15, "shopify": 8}},
+    {"sku": "IFAK-CAT-COYOTE", "units_sold": 14, "by_channel": {"fbm": 9, "shopify": 5}},
+    {"sku": "IFAK-CAT-MULTICAM", "units_sold": 10, "by_channel": {"fbm": 7, "shopify": 3}},
+    {"sku": "IFAK-CAT-BLACK-FBA", "units_sold": 150, "by_channel": {"fba": 150}},
+    {"sku": "IFAK-CAT-GREEN-FBA", "units_sold": 100, "by_channel": {"fba": 100}},
+    {"sku": "IFAK-CAT-COYOTE-FBA", "units_sold": 70, "by_channel": {"fba": 70}},
+    {"sku": "IFAK-CAT-MULTICAM-FBA", "units_sold": 53, "by_channel": {"fba": 53}},
+
+    {"sku": "IFAK-CAT-COMPACT", "units_sold": 30, "by_channel": {"fbm": 20, "shopify": 10}},
+    {"sku": "IFAK-CAT-COMPACT-FBA", "units_sold": 60, "by_channel": {"fba": 60}},
+
+    {"sku": "ESSENTIAL-WALL", "units_sold": 0}
+  ]
+}

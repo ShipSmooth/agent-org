@@ -374,8 +374,12 @@ kits:
       - {supplier: amazon_business, part: "B096LMW9YX", qty: 1}   # CONFIRM
       - {supplier: amazon_business, part: "B07X6QZ53J", qty: 1, channels: [fba]}
 
+  # The four colourways are one product family: they are forecast together,
+  # built together and shipped to FBA in one shipment (docs/replenishment.md §10).
   IFAK-CAT-BLACK:
     name: IFAK with CAT Gen 7 & HyFin — Black
+    family: IFAK-CAT
+    family_name: IFAK with CAT Gen 7 & HyFin (all colourways)
     aliases: {fba: TODO, fbm: IFAK-CAT-BLACK, shopify: IFAK-CAT-BLACK}
     components: &ifak_common
       - {supplier: nar, part: "30-0001", qty: 1}          # black, per B3
@@ -394,12 +398,14 @@ kits:
 
   IFAK-CAT-GREEN:
     name: IFAK with CAT Gen 7 & HyFin — Green
+    family: IFAK-CAT
     aliases: {fba: TODO, fbm: IFAK-CAT-GREEN, shopify: IFAK-CAT-GREEN}
     components: *ifak_common
     pouch: {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", qty: 1}
 
   IFAK-CAT-COYOTE:
     name: IFAK with CAT Gen 7 & HyFin — Coyote
+    family: IFAK-CAT
     aliases: {fba: TODO, fbm: IFAK-CAT-COYOTE, shopify: IFAK-CAT-COYOTE}
     components: *ifak_common
     pouch: {supplier: world_richman, part: "IFAK-CAT-COYOTE-bag", qty: 1}
@@ -407,6 +413,7 @@ kits:
 
   IFAK-CAT-MULTICAM:
     name: IFAK with CAT Gen 7 & HyFin — Multicam
+    family: IFAK-CAT
     aliases: {fba: TODO, fbm: IFAK-CAT-MULTICAM, shopify: IFAK-CAT-MULTICAM}
     components: *ifak_common
     pouch: {supplier: world_richman, part: "IFAK-CAT-MULTICAM-bag", qty: 1}

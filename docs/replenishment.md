@@ -572,6 +572,15 @@ comes from the 125-kit build. Walmart reserve 0 (no history).
 toward fewer boxes, §8). The `channels: [fba]` BOM lines (suffocation
 bags, labels) are consumed against this 240, not against total sales.
 
+> **Unresolved (raised in Phase 1, nothing changed):** the 240 above is
+> not derivable from Step 8. Step 8 allocates 40 on hand − 12 merchant
+> floor = 28 spare against an FBA want of 152, and even adding the whole
+> 125-kit build gives 153 at most, not 240. Phase 1 therefore implements
+> Step 8's allocation as written (it sends 28) and tests the box planner
+> separately against the stated target of 240 → 5 × 48. One of the two
+> numbers is wrong; deciding which is a business decision, so neither the
+> document nor the arithmetic was quietly adjusted to agree.
+
 **Step 10 — supplier split:** 30-0001 (600) + 10-0042 (750) + ZZ-0034 (65
 two-packs) → NAR draft PO, staged as a narescue.com cart on approval
 (Tier 2), freight quote captured at checkout and reported. Dynarex 3161

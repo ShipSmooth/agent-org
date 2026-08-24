@@ -122,6 +122,7 @@ def _check_components(config: LoadedConfig) -> list[Finding]:
             )
         for label, asin in (
             ("purchase_asin", component.purchase_asin),
+            ("sales_asin", component.sales_asin),
             ("part number", key.part if key.supplier == "amazon_business" else None),
         ):
             if asin is not None and not ASIN_PATTERN.match(asin):

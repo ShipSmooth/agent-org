@@ -21,11 +21,12 @@ from agent_org.db.connection import (
     DatabaseSettings,
     connect,
     entity_session,
+    set_app_password,
 )
 from agent_org.db.migrate import run_migrations
 from agent_org.db.sync import sync_config
 from agent_org.integrations.reads import ReadFailure
-from agent_org.runtime.worker import run_replenishment
+from agent_org.runtime.worker import RunAlreadyDone, run_replenishment
 from agent_org.scheduler.schedule import ScheduleError, is_due
 from agent_org.shannon.config_diff import ConfigSnapshot, describe_changes
 from agent_org.tenancy.registry import register_entity
@@ -89,6 +90,8 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         return EXIT_PROBLEM
     with connect(settings.migrator_dsn) as conn:
         result = run_migrations(conn)
+        if settings.app_password:
+            set_app_password(conn, settings.app_password)
         conn.commit()
     if result.applied:
         print("Database updated: " + ", ".join(result.applied))
@@ -104,8 +107,14 @@ def cmd_sync(args: argparse.Namespace) -> int:
     except DatabaseNotConfigured as exc:
         print(str(exc))
         return EXIT_PROBLEM
+    # Registering a business writes to `entities`, the registry the whole
+    # isolation scheme keys off. The application role may only read it, so
+    # that one row goes in as the owner.
+    with connect(settings.migrator_dsn) as owner:
+        register_entity(owner, config.entity)
+        owner.commit()
+
     with connect(settings.app_dsn) as conn:
-        register_entity(conn, config.entity)
         with entity_session(conn, config.entity_id) as scoped:
             counts = sync_config(scoped, config)
         conn.commit()
@@ -141,6 +150,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("\nThe run stopped before reading anything. Nothing was changed.")
         return EXIT_PROBLEM
     except ReadFailure as exc:
+        print(str(exc))
+        return EXIT_PROBLEM
+    except RunAlreadyDone as exc:
         print(str(exc))
         return EXIT_PROBLEM
 
@@ -197,7 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_cmd = sub.add_parser("run", help="run this week's replenishment and write a report")
     run_cmd.add_argument(
         "--fixtures",
-        default="tests/fixtures/ithrive",
+        default="tests/fixtures/golden/data",
         help="folder of saved Veeqo/Gmail exports to read instead of live accounts",
     )
     run_cmd.add_argument("--output", default="reports", help="where to write the report")

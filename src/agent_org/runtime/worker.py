@@ -24,9 +24,14 @@ from agent_org.integrations.veeqo import VeeqoFixtureClient
 from agent_org.policy.engine import PolicyEngine
 from agent_org.shannon.config_diff import ConfigSnapshot
 from agent_org.shannon.run import RunOutcome, Shannon
+from agent_org.tasks.budget import BudgetExceeded
 from agent_org.tasks.queue import Task, TaskQueue, schedule_slot
 
 SHANNON_REPLENISHMENT = "shannon_replenishment"
+
+
+class RunAlreadyDone(RuntimeError):
+    """This week's run has already happened. Re-running would double-count it."""
 
 
 @dataclass(frozen=True)
@@ -85,7 +90,7 @@ def run_replenishment(
     queue.enqueue(SHANNON_REPLENISHMENT, slot)
     task = queue.claim((SHANNON_REPLENISHMENT,))
     if task is None:
-        raise RuntimeError(
+        raise RunAlreadyDone(
             f"This week's replenishment run ({slot}) has already been carried out. "
             "Its report is in the reports folder and in the database."
         )
@@ -114,7 +119,7 @@ def run_replenishment(
             schedule_slot=slot,
             previous_snapshot=previous_snapshot(conn, entity_id),
         )
-    except (ReadFailure, BrokerRefusal) as exc:
+    except (ReadFailure, BrokerRefusal, BudgetExceeded) as exc:
         queue.fail(task, str(exc))
         return RunSummary(task=task, outcome=None, error=str(exc))
 
@@ -130,6 +135,7 @@ def run_replenishment(
 
 __all__ = [
     "SHANNON_REPLENISHMENT",
+    "RunAlreadyDone",
     "RunSummary",
     "fixture_readers",
     "previous_snapshot",

@@ -29,6 +29,7 @@ from agent_org.config.models import (
     Component,
     ComponentClass,
     ComponentKey,
+    Kit,
     LoadedConfig,
     Parameters,
 )
@@ -78,18 +79,34 @@ class Allocation:
 
 
 @dataclass(frozen=True)
-class KitPlan:
+class KitBuild:
+    """One colourway inside a kit family: what can be built, and what runs out."""
+
     kit_group: str
+    name: str
+    buildable_now: int
+    limiting_component: ComponentKey | None
+    limiting_note: str | None
+    build_blocked: str | None
+
+
+@dataclass(frozen=True)
+class KitPlan:
+    """A kit family: colourways are forecast, built and shipped together."""
+
+    family: str
     name: str
     weekly_velocity: Fraction
     demand_units: int
     assembled_stock: int
     build_recommendation: int
-    buildable_now: int
-    limiting_component: ComponentKey | None
-    limiting_note: str | None
+    members: tuple[KitBuild, ...]
     allocation: Allocation | None
     unresolved_aliases: tuple[str, ...] = ()
+
+    @property
+    def buildable_now(self) -> int:
+        return sum(member.buildable_now for member in self.members)
 
 
 @dataclass(frozen=True)
@@ -155,11 +172,11 @@ class ReplenishmentResult:
                 return plan
         raise KeyError(f"No line for {key} in this run.")
 
-    def kit(self, kit_group: str) -> KitPlan:
+    def kit(self, family: str) -> KitPlan:
         for plan in self.kits:
-            if plan.kit_group == kit_group:
+            if plan.family == family:
                 return plan
-        raise KeyError(f"No kit plan for {kit_group} in this run.")
+        raise KeyError(f"No kit plan for {family} in this run.")
 
 
 class ReplenishmentCalculator:
@@ -195,6 +212,17 @@ class ReplenishmentCalculator:
             sku,
             SalesVelocity(sku=sku, units_sold=0, window_days=self.params.velocity_window_days),
         )
+
+    def _standalone_velocity(self, key: ComponentKey, component: Component) -> SalesVelocity:
+        """Standalone sales of a component.
+
+        Only the sales side drives demand. A component with a `sales_asin`
+        is sold under that listing; a `purchase_asin` says nothing about
+        how many Zach sells (docs/replenishment.md §10 step 2).
+        """
+        if component.sales_asin is not None and component.sales_asin in self.velocity:
+            return self.velocity[component.sales_asin]
+        return self._velocity_of(key.part)
 
     def _inbound_of(self, sku: str) -> int:
         shipment = self.inbound.get(sku)
@@ -236,12 +264,21 @@ class ReplenishmentCalculator:
 
     # ------------------------------------------------------------------- kits
 
-    def _kit_channel_velocity(self, kit_group: str) -> dict[str, Fraction]:
-        kit = self.config.boms.kits[kit_group]
+    def _kit_skus(self, kit: Kit) -> tuple[tuple[str, str], ...]:
+        """(channel, SKU) pairs, one per distinct SKU.
+
+        A kit normally carries the same SKU on FBM and Shopify. Counting its
+        stock or its sales once per alias would double the kit.
+        """
+        first_channel: dict[str, str] = {}
+        for channel, sku in sorted(kit.aliases.items()):
+            if sku is not None and sku not in first_channel:
+                first_channel[sku] = channel
+        return tuple((channel, sku) for sku, channel in first_channel.items())
+
+    def _kit_channel_velocity(self, kit: Kit) -> dict[str, Fraction]:
         weekly: dict[str, Fraction] = {}
-        for channel_key, sku in kit.aliases.items():
-            if sku is None:
-                continue
+        for channel_key, sku in self._kit_skus(kit):
             sales = self._velocity_of(sku)
             if sales.by_channel:
                 for channel, units in sales.by_channel.items():
@@ -252,90 +289,112 @@ class ReplenishmentCalculator:
                 weekly[channel_key] = weekly.get(channel_key, Fraction(0)) + sales.weekly()
         return weekly
 
-    def _kit_assembled_stock(self, kit_group: str) -> tuple[int, int, int]:
-        kit = self.config.boms.kits[kit_group]
-        warehouse = 0
-        fba = 0
-        for sku in kit.aliases.values():
-            if sku is None:
-                continue
-            position = self._stock_of(sku)
-            warehouse += position.warehouse_available
-            fba += position.fba_sellable
-        return warehouse, fba, warehouse + fba
+    def _families(self) -> dict[str, list[Kit]]:
+        families: dict[str, list[Kit]] = {}
+        for _, kit in sorted(self.config.boms.kits.items()):
+            families.setdefault(kit.family, []).append(kit)
+        return families
+
+    def _family_name(self, family: str, members: list[Kit]) -> str:
+        for kit in members:
+            if kit.family_name:
+                return kit.family_name
+        if len(members) == 1:
+            return members[0].name
+        return family
 
     def _kit_plans(self) -> tuple[list[KitPlan], dict[str, Fraction]]:
-        """Kit demand, build recommendations and allocation, in that order."""
+        """Family demand, build recommendations and allocation, in that order."""
         plans: list[KitPlan] = []
         kit_demand: dict[str, Fraction] = {}
         horizon = self.params.cover_target_weeks
 
-        for kit_group, kit in sorted(self.config.boms.kits.items()):
-            weekly_by_channel = self._kit_channel_velocity(kit_group)
+        for family, members in sorted(self._families().items()):
+            weekly_by_channel: dict[str, Fraction] = {}
+            warehouse = 0
+            fba_on_hand = 0
+            inbound = 0
+            has_fba_alias = False
+            unresolved: list[str] = []
+            builds: list[KitBuild] = []
+
+            for kit in members:
+                per_kit = self._kit_channel_velocity(kit)
+                for channel, value in per_kit.items():
+                    weekly_by_channel[channel] = weekly_by_channel.get(channel, Fraction(0)) + value
+                kit_demand[kit.kit_group] = sum(per_kit.values(), Fraction(0)) * horizon
+                for channel, sku in self._kit_skus(kit):
+                    position = self._stock_of(sku)
+                    warehouse += position.warehouse_available
+                    fba_on_hand += position.fba_sellable
+                    if channel in self._fba_channels:
+                        has_fba_alias = True
+                        inbound += self._inbound_of(sku)
+                unresolved.extend(
+                    f"{kit.kit_group} has no {channel} SKU"
+                    for channel, sku in sorted(kit.aliases.items())
+                    if sku is None
+                )
+                buildable, limiting, limiting_note = self._build_feasibility(kit)
+                builds.append(
+                    KitBuild(
+                        kit_group=kit.kit_group,
+                        name=kit.name,
+                        buildable_now=buildable,
+                        limiting_component=limiting,
+                        limiting_note=limiting_note,
+                        build_blocked=kit.build_blocked,
+                    )
+                )
+
             weekly = sum(weekly_by_channel.values(), Fraction(0))
-            demand = weekly * horizon
-            kit_demand[kit_group] = demand
-            demand_units = ceil_fraction(demand)
-            warehouse, _fba, assembled = self._kit_assembled_stock(kit_group)
+            demand_units = ceil_fraction(weekly * horizon)
+            assembled = warehouse + fba_on_hand
             build = max(demand_units - assembled, 0)
-            buildable, limiting, limiting_note = self._build_feasibility(kit_group)
-            unresolved = tuple(
-                channel for channel, sku in sorted(kit.aliases.items()) if sku is None
-            )
+            buildable_total = sum(item.buildable_now for item in builds)
+            name = self._family_name(family, members)
 
             allocation: Allocation | None = None
-            resolved_fba_alias = next(
-                (
-                    sku
-                    for channel, sku in sorted(kit.aliases.items())
-                    if sku is not None and channel in self._fba_channels
-                ),
-                None,
-            )
-            if resolved_fba_alias is not None:
-                allocation = self._allocate_kit(kit_group, weekly_by_channel, warehouse)
+            if has_fba_alias:
+                allocation = self._allocate_family(
+                    family, weekly_by_channel, warehouse, fba_on_hand, inbound
+                )
 
-            if build > buildable:
+            if build > buildable_total:
+                short = ", ".join(
+                    item.limiting_note
+                    for item in builds
+                    if item.limiting_note is not None and item.buildable_now == 0
+                )
                 self.warnings.append(
-                    f"{kit.name}: {build} to build but only {buildable} can be "
-                    f"assembled from stock on hand"
-                    + (f" — {limiting_note}" if limiting_note else "")
-                    + "."
+                    f"{name}: {build} to build but only {buildable_total} can be "
+                    f"assembled from stock on hand" + (f" — {short}" if short else "") + "."
                 )
 
             plans.append(
                 KitPlan(
-                    kit_group=kit_group,
-                    name=kit.name,
+                    family=family,
+                    name=name,
                     weekly_velocity=weekly,
                     demand_units=demand_units,
                     assembled_stock=assembled,
                     build_recommendation=build,
-                    buildable_now=buildable,
-                    limiting_component=limiting,
-                    limiting_note=limiting_note,
+                    members=tuple(builds),
                     allocation=allocation,
-                    unresolved_aliases=unresolved,
+                    unresolved_aliases=tuple(unresolved),
                 )
             )
         return plans, kit_demand
 
-    def _allocate_kit(
-        self, kit_group: str, weekly_by_channel: dict[str, Fraction], warehouse: int
+    def _allocate_family(
+        self,
+        family: str,
+        weekly_by_channel: dict[str, Fraction],
+        warehouse: int,
+        fba_on_hand: int,
+        inbound: int,
     ) -> Allocation:
-        """Allocation for a kit spans its channel aliases, so the stock figures
-        are summed across them and the allocation is reported under the kit."""
-        kit = self.config.boms.kits[kit_group]
-        fba_on_hand = 0
-        inbound = 0
-        for channel, sku in kit.aliases.items():
-            if sku is None:
-                continue
-            if channel in self._fba_channels:
-                fba_on_hand += self._stock_of(sku).fba_sellable
-                inbound += self._inbound_of(sku)
-            else:
-                fba_on_hand += 0
+        """Allocation spans a family: colourways ship in one shipment."""
         merchant_weekly = sum(
             (weekly_by_channel.get(channel, Fraction(0)) for channel in self._merchant_channels),
             Fraction(0),
@@ -349,7 +408,7 @@ class ReplenishmentCalculator:
         fba_target = math.floor(self.params.fba_cover_weeks * fba_weekly)
         wanted = fba_target - fba_on_hand - inbound
         return Allocation(
-            sku=kit_group,
+            sku=family,
             warehouse_on_hand=warehouse,
             fba_on_hand=fba_on_hand,
             fba_inbound=inbound,
@@ -361,9 +420,8 @@ class ReplenishmentCalculator:
             walmart_reserve=self.params.walmart_reserve_units,
         )
 
-    def _build_feasibility(self, kit_group: str) -> tuple[int, ComponentKey | None, str | None]:
+    def _build_feasibility(self, kit: Kit) -> tuple[int, ComponentKey | None, str | None]:
         """How many of this kit could be built right now, and what runs out first."""
-        kit = self.config.boms.kits[kit_group]
         buildable: int | None = None
         limiting: ComponentKey | None = None
         note: str | None = None
@@ -395,16 +453,27 @@ class ReplenishmentCalculator:
         kit_plans, kit_demand = self._kit_plans()
 
         fba_send_targets: dict[str, int] = {
-            plan.kit_group: plan.allocation.fba_send
+            plan.family: plan.allocation.fba_send
             for plan in kit_plans
             if plan.allocation is not None and plan.allocation.fba_send > 0
+        }
+        family_demand = {
+            plan.family: sum(
+                (kit_demand.get(member.kit_group, Fraction(0)) for member in plan.members),
+                Fraction(0),
+            )
+            for plan in kit_plans
         }
 
         exploded: dict[ComponentKey, Fraction] = {}
         prep: dict[ComponentKey, Fraction] = {}
         for kit_group, kit in self.config.boms.kits.items():
             demand = kit_demand.get(kit_group, Fraction(0))
-            send = Fraction(fba_send_targets.get(kit_group, 0))
+            # A family ships as one shipment, so its send quantity is split
+            # across colourways in proportion to their demand.
+            family_total = family_demand.get(kit.family, Fraction(0))
+            share = demand / family_total if family_total else Fraction(0)
+            send = Fraction(fba_send_targets.get(kit.family, 0)) * share
             for line in kit.lines:
                 if line.channels is None:
                     exploded[line.component] = (
@@ -464,7 +533,7 @@ class ReplenishmentCalculator:
         for key, component in self.config.boms.components.items():
             if component.component_class is not ComponentClass.FORECAST:
                 continue
-            sales = self.velocity.get(key.part)
+            sales = self.velocity.get(component.sales_asin or key.part)
             if sales is None:
                 continue
             weekly_by_channel = {
@@ -485,7 +554,7 @@ class ReplenishmentCalculator:
         prep_demand: Fraction,
     ) -> ComponentPlan:
         notes: list[str] = []
-        sales = self._velocity_of(key.part)
+        sales = self._standalone_velocity(key, component)
         standalone_weekly = sales.weekly()
         horizon = self._cover(component)
         standalone_demand = standalone_weekly * horizon

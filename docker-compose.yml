@@ -1,6 +1,6 @@
 # Skeleton — targets Docker Desktop on Windows with WSL2.
-# Phase 0 only defines postgres; worker/scheduler/browser/dashboard are
-# commented placeholders until there is application code to run.
+# Phase 1 needs only postgres; worker/scheduler/browser/dashboard are
+# commented placeholders: Phase 1 is run by hand.
 
 services:
   postgres:
@@ -22,9 +22,9 @@ services:
       timeout: 5s
       retries: 5
 
-  # worker:      # Phase 1: claims tasks, runs Shannon + broker executors
-  # scheduler:   # Phase 1: enqueues tasks from config schedules
-  # browser:     # Phase 1: headless Chromium (Playwright) for narescue.com
+  # worker:      # Phase 2: claims tasks in the background (Phase 1 runs by hand)
+  # scheduler:   # Phase 2: enqueues tasks from config schedules
+  # browser:     # Phase 3: headless Chromium (Playwright) for narescue.com
   # dashboard:   # Phase 2: read-only management UI, Tailscale-only
 
 volumes:

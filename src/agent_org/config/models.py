@@ -69,6 +69,9 @@ class Component:
     reorder_point: int | None
     reorder_target: int | None
     purchase_asin: str | None
+    # The listing Zach sells this component on. Only the sales side drives
+    # demand; the purchase side never does (docs/replenishment.md §5).
+    sales_asin: str | None
     cover_target_weeks: Fraction | None
     safety_stock_weeks: Fraction | None
     loc: Loc
@@ -90,6 +93,10 @@ class BomLine:
 class Kit:
     kit_group: str
     name: str
+    # Colourways of one product are forecast, built and shipped together, so
+    # they share a family. A kit with no family stated is its own family.
+    family: str
+    family_name: str | None
     # channel key -> channel SKU. None means the file says TODO: unresolved,
     # reported by validate-config, never guessed at.
     aliases: dict[str, str | None]

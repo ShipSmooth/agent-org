@@ -98,12 +98,20 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
             f"{purchase} → {actual}"
             + (f"   ({plan.purchase_unit_name})" if plan.purchase_unit_name else "")
         )
-        add(
-            f"      demand {_n(plan.gross_demand)} = standalone {_n(plan.standalone_demand)}"
-            f" + kits {_n(plan.kit_demand)}"
-            + (f" + FBA prep {_n(plan.fba_prep_demand)}" if plan.fba_prep_demand else "")
-            + (f" + safety {_n(plan.safety_stock)}" if plan.safety_stock else "")
-        )
+        if plan.component_class is ComponentClass.REORDER_POINT:
+            # Nothing is forecast for these: they are topped back up to a
+            # fixed level whenever they fall below a fixed trigger.
+            add(
+                f"      top up to {_n(plan.gross_demand)} (below the reorder point)"
+                + (f" + FBA prep {_n(plan.fba_prep_demand)}" if plan.fba_prep_demand else "")
+            )
+        else:
+            add(
+                f"      demand {_n(plan.gross_demand)} = standalone {_n(plan.standalone_demand)}"
+                f" + kits {_n(plan.kit_demand)}"
+                + (f" + FBA prep {_n(plan.fba_prep_demand)}" if plan.fba_prep_demand else "")
+                + (f" + safety {_n(plan.safety_stock)}" if plan.safety_stock else "")
+            )
         add(
             f"      have: on hand {plan.on_hand}, on order {plan.on_order}, "
             f"in transit {plan.in_transit}   →  route: {plan.routing}"
@@ -132,14 +140,21 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
     for kit in result.kits:
         if kit.demand_units == 0 and kit.build_recommendation == 0:
             continue
-        add(f"  {kit.kit_group}  {kit.name}")
+        add(f"  {kit.family}  {kit.name}")
         add(
             f"      demand {kit.demand_units} over the cover period "
             f"({_n(kit.weekly_velocity)}/week), assembled stock {kit.assembled_stock}"
             f"  →  build {kit.build_recommendation}"
         )
-        if kit.limiting_note:
-            add(f"      can build {kit.buildable_now} right now — {kit.limiting_note}")
+        for member in kit.members:
+            if member.limiting_note is None:
+                continue
+            add(
+                f"      {member.kit_group}: can build {member.buildable_now} right "
+                f"now — {member.limiting_note}"
+            )
+            if member.build_blocked:
+                add(f"        {member.build_blocked}")
         if kit.unresolved_aliases:
             add("      channel SKUs still missing: " + ", ".join(kit.unresolved_aliases))
         if kit.allocation is not None:

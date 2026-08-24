@@ -549,8 +549,9 @@ class ReplenishmentCalculator:
                     f"{kit.kit_group} has no {channel} SKU"
                     for channel, sku in sorted(kit.aliases.items())
                     # listings.yaml is the authority on Amazon identity: where it
-                    # covers a kit, an internal TODO alias is not a gap (PL-8).
-                    if sku is None and listing_set is None
+                    # speaks for a channel, an internal TODO alias is not a gap
+                    # (PL-8). It speaks for no channel but Amazon's.
+                    if sku is None and not (listing_set is not None and listing_set.covers(channel))
                 )
                 buildable, limiting, limiting_note = self._build_feasibility(kit)
                 builds.append(

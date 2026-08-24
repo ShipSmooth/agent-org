@@ -305,10 +305,11 @@ def _check_kits(config: LoadedConfig, channel_keys: set[str]) -> list[Finding]:
                 )
             if sku is None:
                 listing_set = config.listings.for_kit(kit_group)
-                if listing_set is not None:
+                if listing_set is not None and listing_set.covers(channel_key):
                     # listings.yaml is the authority on Amazon identity: either it
                     # gives the channel SKU, or it says there is no listing on that
-                    # channel, which is a fact rather than a gap (PL-8).
+                    # channel, which is a fact rather than a gap (PL-8). It says
+                    # nothing about Shopify, so a gap there is still a gap.
                     continue
                 findings.append(
                     warning(
@@ -317,8 +318,9 @@ def _check_kits(config: LoadedConfig, channel_keys: set[str]) -> list[Finding]:
                         "and this kit will be under-ordered until the real SKU is in.",
                         kit.loc,
                         fix=(
-                            "Export the channel SKUs from Seller Central and paste the "
-                            "real value in (parking-lot item PL-8)."
+                            "Put the SKU that channel holds in 'aliases'. Amazon's own "
+                            "SKUs live in listings.yaml instead, so this is only ever "
+                            "asked about a channel that file does not speak for."
                         ),
                     )
                 )

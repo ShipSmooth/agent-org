@@ -179,18 +179,25 @@ saying so. This is what today's configuration produces:
 ```
 Configuration for iThrive Medical LLC (ithrive)
 BOM version: 2026-08-24
-Configuration fingerprint: 77aec4952c4d1415
+Configuration fingerprint: b6c77ba0b84081e0
 
-40 components, 12 kits, 9 suppliers, 5 sales channels.
+42 components, 12 kits, 9 suppliers, 5 sales channels.
 
-No problems. 24 warning(s) — worth reading, but nothing that stops a run.
+No problems. 16 warning(s) — worth reading, but nothing that stops a run.
 ```
 
-Most of those warnings are the same open item said once per kit: the
-Amazon FBA and Shopify SKUs still read `TODO`, because they come from a
-Seller Central export you have not done yet (parking-lot item PL-8).
-Until they are in, sales on those channels are not counted and those
-kits are under-ordered. Each warning names the file and the line.
+Amazon identity is no longer among those warnings. `config/ithrive/listings.yaml`
+holds Amazon's own SKUs for every kit and for the three C-A-T colourways,
+and it is the only place they live — the `fba: TODO` placeholders that used
+to sit in `boms.yaml` were removed rather than filled in, because two files
+claiming the same fact eventually disagree. That closed parking-lot item
+PL-8. The aliases still in `boms.yaml` are the SKUs **Veeqo** counts stock
+under, which are yours and are a different thing.
+
+One genuine gap remains and is still warned about: the Compact IFAK has no
+Shopify SKU. `listings.yaml` speaks only for Amazon, so it cannot answer
+that one, and until it is filled in the Compact IFAK's Shopify sales are
+not counted. Each warning names the file and the line.
 
 An `ERROR` looks like this — you should not see one today:
 
@@ -332,10 +339,10 @@ That sets the account's password to whatever `.env` now says.
 section.**
 That is the intended behaviour, not a crash: a part Shannon cannot trust
 is not counted. Fix the file and line named in the message and run
-`validate-config` again. The one known outstanding item today is the
-`TODO` FBA and Shopify SKUs, which need the Seller Central export
-(parking-lot item PL-8). Those are warnings, not errors: the run still
-happens, but sales on those channels are not counted.
+`validate-config` again. The known outstanding item today is the Compact
+IFAK's missing Shopify SKU. That is a warning, not an error: the run still
+happens, but its Shopify sales are not counted. Amazon SKUs are no longer
+outstanding — they are in `config/ithrive/listings.yaml` (PL-8, closed).
 
 A fourth, less likely: **"Veeqo export not found"** or a message about an
 unreadable cell. The export folder is missing a file, or a cell that

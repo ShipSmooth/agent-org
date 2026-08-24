@@ -33,7 +33,7 @@ PREFIX = "ITHRIVE_"
 # asked to believe a count taken in its own future.
 AFTER_THE_COUNT = datetime(2026, 9, 14, 6, 0, tzinfo=UTC)
 
-CANADA = "Amazon.ca"
+EXCLUDED = ("Amazon Canada FBA", "Amazon Canada", "Amazon Mexico FBA", "Amazon Mexico")
 
 
 def _key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -115,14 +115,28 @@ def test_merchant_amazon_does_not_swallow_fba(monkeypatch: pytest.MonkeyPatch) -
     assert velocity["5G-AP1S-TUE4"].by_channel == {"amazon_fbm": 10, "amazon_fba": 20}
 
 
-def test_canadian_sales_do_not_count_towards_demand(monkeypatch: pytest.MonkeyPatch) -> None:
-    """US-only demand, by Zach's decision — and named, not guessed at."""
+def test_the_live_config_excludes_the_four_foreign_amazon_channels() -> None:
+    config, _ = load_config(REAL_CONFIG, "ithrive")
+    assert config.entity.excluded_veeqo_channels == EXCLUDED
+
+
+def test_canadian_and_mexican_sales_do_not_count_towards_demand(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """US-only demand, by Zach's decision — and named, not guessed at.
+
+    All four foreign channels are live and selling. Left unnamed they
+    would be unknown channels and stop the first live run, which is right
+    for a channel nobody has decided about and wrong for one that was
+    decided in August.
+    """
     _key(monkeypatch)
+    config, _ = load_config(REAL_CONFIG, "ithrive")
     client = VeeqoLiveClient(
-        channel_keys={"Amazon": "amazon_fbm"},
-        excluded_channels=frozenset({CANADA}),
+        channel_keys=channel_keys_from(config),
+        excluded_channels=frozenset(config.entity.excluded_veeqo_channels),
         credentials_prefix=PREFIX,
-        transport=_transport(_orders("Amazon", CANADA, CANADA)),
+        transport=_transport(_orders("Amazon", *EXCLUDED)),
     )
     velocity = client.read_velocity(90)
     assert velocity["5G-AP1S-TUE4"].units_sold == 10
@@ -130,20 +144,21 @@ def test_canadian_sales_do_not_count_towards_demand(monkeypatch: pytest.MonkeyPa
 
 
 def test_an_unnamed_foreign_channel_stops_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Until the Canadian channel is named, its sales are not quietly dropped.
+    """A channel nobody has decided about is unknown, and unknown stops.
 
-    Excluding demand is a decision somebody makes in writing. A channel
-    nobody has written down is unknown, and unknown stops the run.
+    Excluding demand is a decision somebody makes in writing. Canada and
+    Mexico have that decision; a fifth marketplace opening tomorrow does
+    not, and must not be dropped by inheriting theirs.
     """
     _key(monkeypatch)
     client = VeeqoLiveClient(
         channel_keys={"Amazon": "amazon_fbm"},
         credentials_prefix=PREFIX,
-        transport=_transport(_orders("Amazon", CANADA)),
+        transport=_transport(_orders("Amazon", "Amazon Japan")),
     )
     with pytest.raises(ReadFailure) as failure:
         client.read_velocity(90)
-    assert CANADA in str(failure.value)
+    assert "Amazon Japan" in str(failure.value)
 
 
 def test_two_channels_cannot_claim_the_same_veeqo_name() -> None:
@@ -194,11 +209,10 @@ def test_the_report_names_demand_left_out_on_purpose(
     reading the report can see.
     """
     config, _ = load_config(REAL_CONFIG, "ithrive")
-    entity = dataclasses.replace(config.entity, excluded_veeqo_channels=(CANADA, "Amazon.com.mx"))
     with entity_session(app_conn, entity_id) as conn:
         summary = run_replenishment(
             conn=conn,
-            config=dataclasses.replace(config, entity=entity),
+            config=config,
             fixtures=Path(__file__).parent / "fixtures" / "ithrive-sample",
             output_dir=tmp_path,
             now=AFTER_THE_COUNT,
@@ -206,7 +220,10 @@ def test_the_report_names_demand_left_out_on_purpose(
     assert summary.error is None, summary.error
     assert summary.report_path is not None
     body = Path(summary.report_path).read_text(encoding="utf-8")
-    assert "Not counted towards demand, by decision: Amazon.ca, Amazon.com.mx" in body
+    assert (
+        "Not counted towards demand, by decision: Amazon Canada, Amazon Canada FBA, "
+        "Amazon Mexico, Amazon Mexico FBA" in body
+    )
     assert "reorder demand is US only" in body
 
 

@@ -95,11 +95,12 @@ not have; the day one appears, the name is unknown and the run stops.
 
 Sales that exist and deliberately do not count are named in
 `excluded_veeqo_channels`. Reorder demand is US only by decision, so
-Amazon Canada and Mexico belong there — the list is empty until someone
-reads their exact names off the account, and until then an order from one
-stops the run instead of being counted. Anything excluded is printed on
-the report under the data sources, because demand left out on purpose is
-still demand left out.
+iThrive lists `Amazon Canada FBA`, `Amazon Canada`, `Amazon Mexico FBA`
+and `Amazon Mexico` there: all four sell, and all four are ignored on
+purpose. Anything excluded is printed on the report under the data
+sources, because demand left out on purpose is still demand left out. A
+channel that is neither mapped nor excluded is unknown and stops the run —
+a new marketplace does not inherit Canada's exemption.
 
 Gmail is the authority on what is already on order. An unreadable inbox
 means "unknown", never "nothing outstanding", because "nothing

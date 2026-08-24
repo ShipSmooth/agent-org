@@ -787,23 +787,20 @@ parking_lot:
       Nothing. The four names unblock the first live Veeqo run.
 
   - id: PL-12
-    item: "Two channel facts that came from Zach's reading, not from the account"
+    item: "'ithrive' is Walmart Seller Fulfilled on Zach's word, not on the account's"
     detail: >
-      First, "ithrive" is configured as Walmart Seller Fulfilled on Zach's word.
       The string names the seller, not the programme, so nothing in it distinguishes
       seller-fulfilled from WFS; the two are told apart in Veeqo by the channel's
-      type and its warehouse, which needs a credential to read. Second, reorder
-      demand is US only by decision, so Amazon Canada and Mexico sales do not count
-      — but nobody has read how those two channels are spelled, so
-      excluded_veeqo_channels is empty.
+      type and its warehouse, which needs a credential to read. Configured as given.
+      The other half of this item is closed: the four Amazon Canada and Mexico
+      channel names were read off the account on 24 Aug 2026 and are now listed in
+      excluded_veeqo_channels, so US-only demand is a decision on record rather than
+      a run that stops on the first Canadian order.
     blocks: >
-      Nothing today, and it fails in the safe direction either way. If "ithrive" is
-      really WFS, Walmart demand lands on the wrong one of two channels that both
-      have zero history, which changes no number now. If a Canadian or Mexican order
-      appears, its channel name is unnamed and the run stops rather than counting it
-      — noisy, not wrong. Read both off the account at the first live run: confirm
-      the channel behind "ithrive", and paste the CA/MX names into
-      excluded_veeqo_channels.
+      Nothing, and it fails in the safe direction. If "ithrive" is really WFS,
+      Walmart demand lands on the wrong one of two channels that both have zero
+      history, which changes no number now. Confirm the channel's type and warehouse
+      at the first live run.
 
   # PL-8 RESOLVED — see the note on PL-4 above
   - id: PL-8

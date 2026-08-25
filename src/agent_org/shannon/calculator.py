@@ -76,7 +76,7 @@ def in_words(count: int) -> str:
 
 
 def day_and_month(when: date) -> str:
-    """26 Aug. Not %-d, which does not exist on the Windows machine this runs on."""
+    """23 Aug. Not %-d, which does not exist on the Windows machine this runs on."""
     return f"{when.day} {when:%b}"
 
 
@@ -330,7 +330,7 @@ class ComponentPlan:
         return self.manual_count is not None
 
     def hand_count_in_words(self) -> str | None:
-        """The sentence Zach reads: 4,000, counted 26 Aug (3 weeks ago)."""
+        """The sentence Zach reads: 4,000, counted 23 Aug (3 weeks ago)."""
         if self.manual_count is None or self.manual_counted_on is None:
             return None
         age = (

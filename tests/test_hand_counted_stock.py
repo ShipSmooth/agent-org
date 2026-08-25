@@ -40,7 +40,8 @@ from agent_org.shannon.report import ReportContext, render
 
 REPO = Path(__file__).resolve().parents[1]
 REAL_CONFIG = REPO / "config"
-COUNT_DAY = date(2026, 8, 26)
+# Sunday 23 August 2026, the day the shelves were actually counted.
+COUNT_DAY = date(2026, 8, 23)
 # Three weeks after the count: recent enough to be used without comment.
 FRESH = date(2026, 9, 16)
 # Nine weeks after it: still the only figure there is, and overdue.
@@ -149,7 +150,7 @@ def test_a_manual_source_without_a_count_is_rejected(tmp_path: Path) -> None:
     is the exact failure this whole mechanism exists to prevent."""
     findings = _broken(
         tmp_path,
-        "     manual_stock: {count: 4000, counted_on: 2026-08-26},\n",
+        "     manual_stock: {count: 4000, counted_on: 2026-08-23},\n",
         "",
     )
     matches = [text for text in findings if "B0D9GSKGY5" in text and "manual_stock" in text]
@@ -161,13 +162,32 @@ def test_a_count_dated_in_the_future_is_rejected(tmp_path: Path) -> None:
     """A typo in a date is how a count nobody has taken becomes on-hand stock."""
     findings = _broken(
         tmp_path,
-        "manual_stock: {count: 4000, counted_on: 2026-08-26}",
+        "manual_stock: {count: 4000, counted_on: 2026-08-23}",
         "manual_stock: {count: 4000, counted_on: 2027-01-04}",
     )
     matches = [text for text in findings if "2027-01-04" in text]
     assert matches, findings
     assert all(text.startswith("ERROR") for text in matches), matches
     assert any("has not happened" in text for text in matches), matches
+
+
+def test_no_live_count_is_dated_in_the_future_of_the_clock(config: LoadedConfig) -> None:
+    """The eleven counts were first committed as 26 Aug, three days after the
+    stock take, and validate-config refused every run until the date was
+    corrected. The rule was right; the data was wrong. This asserts against
+    the real clock rather than a fixed day, because a count dated ahead of
+    today is unusable whenever the suite runs.
+    """
+    today = date.today()
+    ahead = [
+        f"{key}: {component.manual_stock.counted_on.isoformat()}"
+        for key, component in config.boms.components.items()
+        if component.manual_stock is not None and component.manual_stock.counted_on > today
+    ]
+    assert not ahead, ahead
+
+    findings = validate(config, (), today=today).findings
+    assert not [item.render() for item in findings if item.render().startswith("ERROR")]
 
 
 def test_a_component_may_not_set_both_a_target_and_a_quantity(tmp_path: Path) -> None:
@@ -187,10 +207,10 @@ def test_a_component_may_not_set_both_a_target_and_a_quantity(tmp_path: Path) ->
 
 
 def test_the_count_and_its_age_are_printed_in_plain_words(config: LoadedConfig) -> None:
-    """ "4,000, counted 26 Aug (3 weeks ago)" — the figure and how much to
+    """ "4,000, counted 23 Aug (3 weeks ago)" — the figure and how much to
     trust it, in the same sentence."""
     body = _report(config, _run(config, FRESH), FRESH)
-    assert "Blue dot label — 4,000, counted 26 Aug (3 weeks ago)" in body
+    assert "Blue dot label — 4,000, counted 23 Aug (3 weeks ago)" in body
     assert "counted by hand, not held in Veeqo" in body
 
 

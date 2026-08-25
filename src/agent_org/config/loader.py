@@ -158,7 +158,7 @@ def _manual_stock(entry: YamlMap, key: ComponentKey, findings: list[Finding]) ->
             error(
                 f"Component {key} has a hand count but no usable date for it.",
                 block.loc_of("counted_on"),
-                fix="Write 'counted_on: 2026-08-26' — the day the shelf was counted.",
+                fix="Write 'counted_on: 2026-08-23' — the day the shelf was counted.",
             )
         )
         return None

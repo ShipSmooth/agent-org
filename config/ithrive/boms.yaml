@@ -330,7 +330,7 @@ components:
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 200, reorder_quantity: 1000,
      stock_source: manual,
-     manual_stock: {count: 400, counted_on: 2026-08-26},
+     manual_stock: {count: 400, counted_on: 2026-08-23},
      note: "NOT a NAR part. Previously mis-attributed to ZZ-0063/ZZ-0064."}
   - {supplier: amazon_business, part: "B0FC56RYZ3", name: "Nitrile Gloves, Blue, Large",
      class: reorder_point, units_per_purchase_unit: null,
@@ -350,7 +350,7 @@ components:
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 200, reorder_quantity: 2000,
      stock_source: manual,
-     manual_stock: {count: 300, counted_on: 2026-08-26},
+     manual_stock: {count: 300, counted_on: 2026-08-23},
      note: "Express kit only. Consumed on every channel."}
   - supplier: amazon_business
     part: "B096LMW9YX"
@@ -360,7 +360,7 @@ components:
     reorder_point: 200
     reorder_quantity: 1500
     stock_source: manual
-    manual_stock: {count: 300, counted_on: 2026-08-26}
+    manual_stock: {count: 300, counted_on: 2026-08-23}
     note: >
       RESOLVED 21 Aug 2026 (Zach): a glove-roll holds two gloves, i.e. one pair.
       So the bag quantity in a kit equals the number of glove PAIRS in that kit —
@@ -375,25 +375,25 @@ components:
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 1000, reorder_quantity: 5000,
      stock_source: manual,
-     manual_stock: {count: 4000, counted_on: 2026-08-26},
+     manual_stock: {count: 4000, counted_on: 2026-08-23},
      note: "One per HyFin pack sent to FBA."}
   - {supplier: amazon_business, part: "B0BSX91NB9", name: "FBA bag with suffocation warning (small)",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 100, reorder_quantity: 1000,
      stock_source: manual,
-     manual_stock: {count: 300, counted_on: 2026-08-26},
+     manual_stock: {count: 300, counted_on: 2026-08-23},
      note: "One per triangular bandage or C-A-T holder shipped FBA."}
   - {supplier: amazon_business, part: "B07X6QZ53J", name: "FBA bag with suffocation warning (large)",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 200, reorder_quantity: 1500,
      stock_source: manual,
-     manual_stock: {count: 300, counted_on: 2026-08-26},
+     manual_stock: {count: 300, counted_on: 2026-08-23},
      note: "One per kit and per NAR litter shipped FBA."}
   - {supplier: amazon_business, part: "B0756SVPMF", name: "FBA item labels, 30 per sheet",
      class: reorder_point, units_per_purchase_unit: 30,
      reorder_point: 1000, reorder_quantity: 10000,
      stock_source: manual,
-     manual_stock: {count: 5000, counted_on: 2026-08-26},
+     manual_stock: {count: 5000, counted_on: 2026-08-23},
      note: "Counted in labels, bought in sheets of 30."}
 
   # ---- Amazon Business: ops consumables — never counted, reminder only ------
@@ -442,14 +442,14 @@ components:
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 300, reorder_quantity: 1000,
      stock_source: manual,
-     manual_stock: {count: 2000, counted_on: 2026-08-26},
-     note: "Count is Zach's approximation ('~2,000'), restated 26 Aug 2026 — see PL-10."}
+     manual_stock: {count: 2000, counted_on: 2026-08-23},
+     note: "Count is Zach's approximation ('~2,000'), dated to the 23 Aug take — see PL-10."}
   - {supplier: world_richman, part: "IFAK-CAT-GREEN-bag", name: "MOLLE pouch, Green",
      class: reorder_point, units_per_purchase_unit: null,
      reorder_point: 100, reorder_quantity: 500,
      stock_source: manual,
-     manual_stock: {count: 4750, counted_on: 2026-08-26},
-     note: "Count is Zach's approximation ('~4,750'), restated 26 Aug 2026 — see PL-10."}
+     manual_stock: {count: 4750, counted_on: 2026-08-23},
+     note: "Count is Zach's approximation ('~4,750'), dated to the 23 Aug take — see PL-10."}
   - supplier: orca_tactical
     part: "ORCA-MOLLE-EMT-COYOTE"
     part_is_internal_reference: true
@@ -459,7 +459,7 @@ components:
     reorder_point: 20
     reorder_quantity: 100
     stock_source: manual
-    manual_stock: {count: 0, counted_on: 2026-08-26}
+    manual_stock: {count: 0, counted_on: 2026-08-23}
     note: "Order by product name; Orca has no item numbers. None on the shelf: the kit cannot be built."
   - supplier: orca_tactical
     part: "ORCA-MOLLE-EMT-MULTICAM"
@@ -470,7 +470,7 @@ components:
     reorder_point: 20
     reorder_quantity: 100
     stock_source: manual
-    manual_stock: {count: 0, counted_on: 2026-08-26}
+    manual_stock: {count: 0, counted_on: 2026-08-23}
     note: "Order by product name; Orca has no item numbers. None on the shelf: the kit cannot be built."
   - {supplier: world_richman, part: "IFAK-CAT-COMPACT-bag", name: "Slim MOLLE belt carrier",
      class: reorder_point, units_per_purchase_unit: null,
@@ -760,13 +760,13 @@ parking_lot:
   - id: PL-10
     item: "Four hand counts carry a date they were restated on, not a date they were counted on"
     detail: >
-      The 26 Aug worksheet dated seven of the eleven hand counts explicitly
-      ("400 counted by Zach 2026-08-26"). Four did not: the Black and Green MOLLE
-      pouches came over as approximations ("~2,000", "~4,750") and the two Orca
-      pouches as "ZERO — kit cannot be built". A manual count needs a date, so all
-      four carry counted_on: 2026-08-26 — the day the worksheet restated them. If
-      those numbers are older than that, their age on the report is optimistic, and
-      the two approximate ones are approximate.
+      The worksheet dated seven of the eleven hand counts explicitly to the stock
+      take of Sunday 23 Aug 2026. Four did not: the Black and Green MOLLE pouches
+      came over as approximations ("~2,000", "~4,750") and the two Orca pouches as
+      "ZERO — kit cannot be built". A manual count needs a date, so all four carry
+      counted_on: 2026-08-23 alongside the rest. If those numbers are older than
+      that, their age on the report is optimistic, and the two approximate ones are
+      approximate.
     blocks: >
       Nothing. Confirm the four counts and their real dates at the next stock take,
       then correct manual_stock here. Shannon will ask again automatically once any

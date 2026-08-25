@@ -25,11 +25,11 @@ REAL_CONFIG = REPO / "config"
 GOLDEN_CONFIG = Path(__file__).parent / "fixtures" / "golden" / "config"
 INVALID_CONFIG = Path(__file__).parent / "fixtures" / "invalid" / "config"
 # The day the shelves behind the eleven hand-counted components were
-# counted, which is the day `bom_version` names. Validation is told the
-# date rather than reading the clock, so "that count is dated in the
-# future" is a fact about the configuration and not about when the suite
-# happens to run.
-COUNT_DAY = date(2026, 8, 26)
+# counted: Sunday 23 August 2026, which is not the day `bom_version`
+# names. Validation is told the date rather than reading the clock, so
+# "that count is dated in the future" is a fact about the configuration
+# and not about when the suite happens to run.
+COUNT_DAY = date(2026, 8, 23)
 
 
 def _findings(root: Path) -> list[str]:

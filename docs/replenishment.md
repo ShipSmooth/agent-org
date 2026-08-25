@@ -156,13 +156,13 @@ comes from:
 stock_source: manual
 manual_stock:
   count: 4000
-  counted_on: 2026-08-26
+  counted_on: 2026-08-23
 ```
 
 - On-hand is `manual_stock.count`. Veeqo is not asked, and its silence is
   never read as an empty shelf.
 - The report prints the figure and its age in words: *"Blue dot label —
-  4,000, counted 26 Aug (3 weeks ago) — counted by hand, not held in
+  4,000, counted 23 Aug (3 weeks ago) — counted by hand, not held in
   Veeqo."*
 - A count older than **eight weeks** is still used — it is the only figure
   there is — and a `RECOUNT-*` item goes to the parking lot.

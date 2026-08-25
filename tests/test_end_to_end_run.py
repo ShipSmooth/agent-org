@@ -95,7 +95,7 @@ def live_config_report(
     """The same run, but against config/ithrive — the file Zach actually
     edits — with sample saved exports standing in for the live accounts.
 
-    Dated after 26 August, the day the eleven hand-counted shelves were
+    Dated after 23 August, the day the eleven hand-counted shelves were
     counted: a run cannot be asked to believe a count taken in its own
     future, and this is the live parts list, counts and all.
     """

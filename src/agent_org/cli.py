@@ -27,7 +27,13 @@ from agent_org.db.migrate import run_migrations
 from agent_org.db.sync import sync_config
 from agent_org.env import load_env_file
 from agent_org.integrations.reads import ReadFailure
-from agent_org.runtime.worker import RunAlreadyDone, deliver_report, run_replenishment
+from agent_org.runtime.worker import (
+    NothingToResend,
+    RunAlreadyDone,
+    deliver_report,
+    resend_report,
+    run_replenishment,
+)
 from agent_org.scheduler.schedule import ScheduleError, is_due
 from agent_org.shannon.config_diff import ConfigSnapshot, describe_changes
 from agent_org.tenancy.registry import register_entity
@@ -198,8 +204,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"The report was NOT emailed: {summary.email_error}")
         print(
             "The report itself is written and safe, and the failed attempt is "
-            "recorded in the database. Fix the mail settings and run "
-            "`shannon run --again` to work the week out afresh and send it."
+            "recorded in the database. Fix the mail settings, then run "
+            "`shannon resend` to send this same report — the numbers in it are "
+            "not wrong, they just did not arrive. `shannon run --again` works the "
+            "week out afresh instead, which is what you want if something changed."
         )
         return EXIT_PROBLEM
     if summary.emailed_to:
@@ -207,6 +215,62 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(
         "Nothing was ordered, no cart was staged and no supplier was contacted. "
         "Read the report, then place any orders yourself."
+    )
+    return EXIT_OK
+
+
+def cmd_resend(args: argparse.Namespace) -> int:
+    """Put an already-written report in the post again.
+
+    Deliberately separate from `run`: this one cannot read Veeqo, cannot
+    calculate and cannot write a report. It sends bytes that were filed
+    earlier, so what arrives is provably what was worked out at the time.
+    """
+    config = _load(args)
+    try:
+        settings = DatabaseSettings.from_env()
+    except DatabaseNotConfigured as exc:
+        print(str(exc))
+        return EXIT_PROBLEM
+
+    try:
+        with connect(settings.app_dsn) as conn:
+            with entity_session(conn, config.entity_id) as scoped:
+                summary = resend_report(
+                    conn=scoped,
+                    config=config,
+                    week=args.week,
+                    now=datetime.now(tz=UTC),
+                )
+            # Committed whether it sent or not: a failed attempt is a row
+            # worth keeping, and losing it would make the next failure look
+            # like the first.
+            conn.commit()
+    except NothingToResend as exc:
+        print(str(exc))
+        return EXIT_PROBLEM
+
+    if summary.previous is not None and summary.previous.error is not None:
+        print(
+            f"The last attempt on this report, at "
+            f"{summary.previous.attempted_at:%d %b %Y %H:%M} UTC, failed: "
+            f"{summary.previous.error}"
+        )
+    if summary.error is not None:
+        print(f"The report was NOT emailed: {summary.error}")
+        print(
+            f"The report itself is untouched at {summary.report.file_path}, and "
+            "this attempt is recorded in the database beside the others."
+        )
+        return EXIT_PROBLEM
+    print(
+        f"Emailed the report for {summary.week} to "
+        f"{', '.join(summary.recipients)} — subject: {summary.subject}"
+    )
+    print(
+        f"Nothing was worked out again: this is the report written at "
+        f"{summary.report.written_at:%d %b %Y %H:%M} UTC, sent as it stands. "
+        "Nothing was ordered and no supplier was contacted."
     )
     return EXIT_OK
 
@@ -323,10 +387,32 @@ def build_parser() -> argparse.ArgumentParser:
             "You do not need this flag after a run that FAILED — nothing was "
             "completed then, so plain `shannon run` picks that week up again. It "
             "re-reads, re-reports and re-sends the report by email: nothing is "
-            "re-staged, re-ordered or bought, and no supplier is contacted."
+            "re-staged, re-ordered or bought, and no supplier is contacted. Use it "
+            "as often as you like — if all you need is the email, `shannon resend` "
+            "sends the report that already exists without reading anything."
         ),
     )
     run_cmd.set_defaults(func=cmd_run)
+
+    resend_cmd = sub.add_parser(
+        "resend",
+        help=(
+            "email a report that is already written, without working the week out "
+            "again. For when the report is right and the mail server was not. "
+            "Reads nothing from Veeqo or the inbox, writes no new report, and "
+            "records the attempt beside the earlier ones."
+        ),
+    )
+    resend_cmd.add_argument(
+        "--week",
+        default=None,
+        help=(
+            "the ISO week to send, as 2026-W35. Defaults to the week it is now. "
+            "The report sent is the one that currently stands for that week; a "
+            "report a re-run has superseded is never sent."
+        ),
+    )
+    resend_cmd.set_defaults(func=cmd_resend)
 
     schedule_cmd = sub.add_parser(
         "schedule",

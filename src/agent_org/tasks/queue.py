@@ -177,6 +177,14 @@ class TaskQueue:
         deliberately narrow: it does not touch action fingerprints, so
         anything already staged or sent stays staged or sent exactly once.
         Returns None when there is no finished run of that slot to repeat.
+
+        Reopening also buys the attempt it is about to need. `attempts` and
+        `max_attempts` are the budget for a process that dies mid-run: two
+        retries and then stop, so a crash loop cannot run forever. A week
+        Zach re-runs on purpose is not a crash, and spending his re-runs out
+        of the crash budget silently turned the third `--again` of a week
+        into "this week has already been carried out". The two counters keep
+        counting; the ceiling rises by one each time he asks.
         """
         with self.conn.cursor() as cur:
             cur.execute(
@@ -192,10 +200,27 @@ class TaskQueue:
         if row is None:
             return None
         task = _row_to_task(row)
-        if task.state is TaskState.QUEUED:
-            return task
-        self._finish(task, TaskState.QUEUED, None, {"reopened_because": reason})
+        self._allow_one_more_attempt(task)
+        if task.state is not TaskState.QUEUED:
+            self._finish(task, TaskState.QUEUED, None, {"reopened_because": reason})
         return self.get(task.id)
+
+    def _allow_one_more_attempt(self, task: Task) -> None:
+        """Raise the ceiling so the run being asked for can be claimed.
+
+        Never lowers it, and never resets `attempts`: the attempt number is
+        what tells a re-run's report apart from the one before it, so it has
+        to keep going up.
+        """
+        self.conn.execute(
+            """
+            UPDATE tasks
+               SET max_attempts = GREATEST(max_attempts, attempts + 1),
+                   updated_at = now()
+             WHERE id = %s
+            """,
+            (task.id,),
+        )
 
     def heartbeat(self, task: Task) -> None:
         self.conn.execute(
@@ -257,6 +282,23 @@ class TaskQueue:
                 self.requeue(task, message)
             reaped.append(task)
         return reaped
+
+    def find(self, kind: str, schedule_slot: str) -> Task | None:
+        """The task for one business occurrence, without claiming it.
+
+        For telling someone what state a week is in, which is a question
+        that must not have the side effect of starting it.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {COLUMNS} FROM tasks
+                 WHERE entity_id = %s AND kind = %s AND schedule_slot = %s
+                """,
+                (self.entity_id, kind, schedule_slot),
+            )
+            row = cur.fetchone()
+        return _row_to_task(row) if row is not None else None
 
     def get(self, task_id: str) -> Task | None:
         with self.conn.cursor() as cur:

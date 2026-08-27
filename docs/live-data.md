@@ -155,4 +155,40 @@ The guard keys on **completion**, not on attempt:
 - a week that **succeeded** needs `--again`, which regenerates and
   supersedes the earlier report rather than replacing it.
 
-`shannon run --help` says which is which.
+`--again` may be used as often as it is asked for. `attempts` and
+`max_attempts` on the task are the budget for a process that dies
+mid-run — two retries and stop, so a crash loop cannot run forever — and a
+re-run asked for by name is not a crash: reopening the week raises the
+ceiling by one, so the counters still count crashes and never refuse a
+deliberate re-run.
+
+The guard reads `report_emails` before it says anything about delivery. It
+distinguishes a week that was emailed (naming the address it reached), one
+whose last attempt failed (quoting the error), one nobody has tried to
+send, and a run still going in another process. It never asserts a
+delivery that has no `SENT` row behind it.
+
+## 6. Sending a report that already exists
+
+`shannon resend [--week 2026-W35]` puts the report that currently stands
+for a week in the post again. It reads nothing from Veeqo or the inbox,
+calculates nothing, and writes no report: the body is read back out of the
+database by id, so what arrives is what was worked out at the time. The
+attempt lands in `report_emails` beside the earlier ones, carrying its own
+action fingerprint so the broker treats it as a delivery asked for rather
+than a repeat to be swallowed.
+
+It is the command for the case where the numbers were right and the mail
+server was not. `--again` is for the other case: something changed, and
+the week should be worked out afresh.
+
+A report a re-run has superseded is never sent. A report written by a
+`--no-email` run cannot be resent either: no subject line was recorded for
+it, and the subject carries the headline (how many lines need an order,
+how many are blocked), so inventing one would mean counting the week again
+inside the command whose promise is that it does not. It says that and
+points at `--again`.
+
+Neither command orders anything or contacts a supplier.
+
+`shannon run --help` and `shannon resend --help` say which is which.

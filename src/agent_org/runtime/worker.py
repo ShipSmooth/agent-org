@@ -37,7 +37,7 @@ from agent_org.notify.email import Sender, SendFailed, SmtpSender
 from agent_org.policy.engine import PolicyEngine
 from agent_org.shannon.calculator import ManualProposal
 from agent_org.shannon.config_diff import ConfigSnapshot
-from agent_org.shannon.run import RunOutcome, Shannon, email_the_report
+from agent_org.shannon.run import ACTION_EMAIL_REPORT, RunOutcome, Shannon, email_the_report
 from agent_org.tasks.budget import BudgetExceeded
 from agent_org.tasks.queue import Task, TaskQueue, TaskState, schedule_slot
 
@@ -50,6 +50,48 @@ PLACEHOLDER = "TBD-"
 
 class RunAlreadyDone(RuntimeError):
     """This week's run has already happened. Re-running would double-count it."""
+
+
+class NothingToResend(RuntimeError):
+    """There is no written report for that week to put in the post again."""
+
+
+@dataclass(frozen=True)
+class WrittenReport:
+    """The live report for a week, as the database has it."""
+
+    report_id: str
+    task_id: str
+    schedule_slot: str
+    file_path: str
+    written_at: datetime
+
+
+@dataclass(frozen=True)
+class EmailAttempt:
+    """One recorded attempt to deliver a report, successful or not."""
+
+    status: str
+    subject: str
+    recipients: str
+    error: str | None
+    attempted_at: datetime
+
+    @property
+    def sent(self) -> bool:
+        return self.status == "SENT"
+
+
+@dataclass(frozen=True)
+class ResendSummary:
+    """What `shannon resend` did with a report that was already written."""
+
+    report: WrittenReport
+    week: str
+    recipients: tuple[str, ...]
+    subject: str
+    error: str | None = None
+    previous: EmailAttempt | None = None
 
 
 @dataclass(frozen=True)
@@ -265,12 +307,7 @@ def run_replenishment(
             queue.claim((SHANNON_REPLENISHMENT,), schedule_slot=slot) if task is not None else None
         )
     if task is None:
-        raise RunAlreadyDone(
-            f"This week's replenishment run ({slot}) has already been carried out. "
-            "Its report is in the reports folder and in the database, and it has "
-            "been emailed. Run `shannon run --again` to work the week out afresh "
-            "and replace that report; nothing is ordered either way."
-        )
+        raise RunAlreadyDone(week_already_done(conn, entity_id, slot, again=again))
 
     registry = build_registry(ReportWriter(conn=conn, entity_id=entity_id, output_dir=output_dir))
     broker = ActionBroker(
@@ -322,6 +359,232 @@ def run_replenishment(
         },
     )
     return RunSummary(task=task, outcome=outcome, error=None)
+
+
+def live_report(
+    conn: psycopg.Connection[tuple[object, ...]], entity_id: str, slot: str
+) -> WrittenReport | None:
+    """The report that currently stands for a week, if there is one.
+
+    Superseded rows are excluded: a week that has been re-run has one live
+    report and a trail of replaced ones, and only the live one is worth
+    reading or sending.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT r.id, r.task_id, t.schedule_slot, r.file_path, r.created_at
+              FROM reports r JOIN tasks t ON t.id = r.task_id
+             WHERE r.entity_id = %s AND r.kind = 'replenishment'
+               AND t.schedule_slot = %s AND r.superseded_by IS NULL
+             ORDER BY r.created_at DESC
+             LIMIT 1
+            """,
+            (entity_id, slot),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    written_at = row[4]
+    assert isinstance(written_at, datetime)
+    return WrittenReport(
+        report_id=str(row[0]),
+        task_id=str(row[1]),
+        schedule_slot=str(row[2]),
+        file_path=str(row[3]),
+        written_at=written_at,
+    )
+
+
+def email_attempts(
+    conn: psycopg.Connection[tuple[object, ...]], entity_id: str, report_id: str
+) -> tuple[EmailAttempt, ...]:
+    """Every attempt to deliver one report, newest first.
+
+    "Was this week delivered?" is answered here and nowhere else. A report
+    row says what the week found; it says nothing about whether it arrived,
+    and anything that reads delivery off the report row is guessing.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT status, subject, recipients, error, attempted_at
+              FROM report_emails
+             WHERE entity_id = %s AND report_id = %s
+             ORDER BY attempted_at DESC
+            """,
+            (entity_id, report_id),
+        )
+        rows = cur.fetchall()
+    attempts: list[EmailAttempt] = []
+    for row in rows:
+        attempted_at = row[4]
+        assert isinstance(attempted_at, datetime)
+        attempts.append(
+            EmailAttempt(
+                status=str(row[0]),
+                subject=str(row[1]),
+                recipients=str(row[2]),
+                error=None if row[3] is None else str(row[3]),
+                attempted_at=attempted_at,
+            )
+        )
+    return tuple(attempts)
+
+
+def week_already_done(
+    conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    slot: str,
+    again: bool,
+) -> str:
+    """Say what state the week is actually in, having looked.
+
+    The sentence this replaces asserted that the report "has been emailed"
+    without ever reading `report_emails`, so a week whose only delivery
+    attempt was a 535 from the mail server was told it had arrived. Every
+    clause below is a fact read out of the database.
+    """
+    audit = AuditLog(conn=conn, entity_id=entity_id, actor="shannon")
+    task = TaskQueue(conn=conn, entity_id=entity_id, audit=audit).find(SHANNON_REPLENISHMENT, slot)
+    if task is not None and task.state is TaskState.RUNNING:
+        return (
+            f"A run for this week ({slot}) is going on right now, in another "
+            "process. Nothing has been started a second time. Wait for it to "
+            "finish, then read the report or run this again."
+        )
+    report = live_report(conn, entity_id, slot)
+    if report is None:
+        return (
+            f"This week ({slot}) is marked as carried out, but there is no report "
+            "row for it in the database, so there is nothing to show you and "
+            "nothing to send. Run `shannon run --again` to work it out afresh."
+        )
+    last = next(iter(email_attempts(conn, entity_id, report.report_id)), None)
+    written = f"Its report was written at {report.written_at:%d %b %Y %H:%M} UTC "
+    written += f"and is at {report.file_path}."
+    if last is None:
+        delivery = (
+            "It has NOT been emailed — no delivery has ever been attempted for it. "
+            "Run `shannon resend` to send that report as it stands, or "
+            "`shannon run --again` to work the week out afresh and send the new one."
+        )
+    elif last.sent:
+        delivery = (
+            f"It was emailed to {last.recipients} at "
+            f"{last.attempted_at:%d %b %Y %H:%M} UTC. Run `shannon run --again` to "
+            "work the week out afresh and replace that report, or `shannon resend` "
+            "to put the same report in the post again."
+        )
+    else:
+        delivery = (
+            f"It has NOT been emailed. The last attempt, at "
+            f"{last.attempted_at:%d %b %Y %H:%M} UTC, failed: {last.error} "
+            "Fix that, then run `shannon resend` to send that same report — or "
+            "`shannon run --again` to work the week out afresh and send the new one."
+        )
+    stuck = ""
+    if again and task is not None:
+        # With reopen() raising the ceiling this should not happen, so if it
+        # does, say the number rather than blaming the week.
+        stuck = (
+            f" `--again` could not claim the week: it has had {task.attempts} "
+            f"attempts against a ceiling of {task.max_attempts}."
+        )
+    return (
+        f"This week's replenishment run ({slot}) has already been carried out. "
+        f"{written} {delivery} Nothing is ordered either way.{stuck}"
+    )
+
+
+def resend_report(
+    conn: psycopg.Connection[tuple[object, ...]],
+    config: LoadedConfig,
+    week: str | None = None,
+    now: datetime | None = None,
+    sender: Sender | None = None,
+) -> ResendSummary:
+    """Send a report that is already written, without working the week out again.
+
+    The counterpart to `--again`, and deliberately not the same thing. A
+    re-run reads Veeqo and the mailbox afresh and produces a new report that
+    supersedes the old one; a resend touches no external system except the
+    mail server and delivers the exact bytes already filed. When SMTP had a
+    bad minute, the report is not wrong and does not want regenerating — it
+    wants posting.
+
+    Recorded as another row in `report_emails` against the same report, which
+    is what that table was built to distinguish.
+    """
+    moment = now or datetime.now(tz=UTC)
+    entity_id = config.entity_id
+    slot = (
+        f"{SHANNON_REPLENISHMENT}/{week}" if week else schedule_slot(SHANNON_REPLENISHMENT, moment)
+    )
+    report = live_report(conn, entity_id, slot)
+    if report is None:
+        raise NothingToResend(
+            f"There is no report for {slot} to send. Nothing has been emailed. "
+            "Run `shannon run` to work that week out first."
+        )
+    attempts = email_attempts(conn, entity_id, report.report_id)
+    previous = next(iter(attempts), None)
+    if previous is None:
+        raise NothingToResend(
+            f"The report for {slot} has never been offered to the mail server, so "
+            "there is no subject line recorded for it — it was written with "
+            "--no-email. Run `shannon run --again` to work the week out afresh "
+            "and send it."
+        )
+    audit = AuditLog(conn=conn, entity_id=entity_id, actor="shannon")
+    identity = config.shannon
+    registry = ExecutorRegistry()
+    registry.register(
+        report_email_executor(
+            ReportEmailer(
+                conn=conn,
+                entity_id=entity_id,
+                sender=sender or SmtpSender(credentials_prefix=config.entity.credentials_prefix),
+                from_name=identity.from_name,
+                from_address=identity.from_address,
+            )
+        )
+    )
+    broker = ActionBroker(
+        conn=conn,
+        entity_id=entity_id,
+        policy=PolicyEngine(config.policy),
+        registry=registry,
+        audit=audit,
+        suppliers=config.boms.suppliers,
+    )
+    recipients = config.shannon.report_email_addresses()
+    summary = ResendSummary(
+        report=report,
+        week=slot.split("/")[-1],
+        recipients=recipients,
+        subject=previous.subject,
+        previous=previous,
+    )
+    try:
+        broker.submit(
+            action_type=ACTION_EMAIL_REPORT,
+            payload={
+                "report_id": report.report_id,
+                "recipients": list(recipients),
+                "subject": previous.subject,
+            },
+            task_id=report.task_id,
+            schedule_slot=slot,
+            # A resend is a new attempt at the same delivery, so it needs a
+            # fingerprint of its own — otherwise the broker recognises the
+            # attempt that failed and hands back its failure without ever
+            # troubling the mail server.
+            attempt_salt=f"resend-{len(attempts) + 1}",
+        )
+    except (SendFailed, BrokerRefusal) as exc:
+        return replace(summary, error=str(exc))
+    return summary
 
 
 def deliver_report(
@@ -392,13 +655,21 @@ def deliver_report(
 
 __all__ = [
     "SHANNON_REPLENISHMENT",
+    "EmailAttempt",
+    "NothingToResend",
+    "ResendSummary",
     "RunAlreadyDone",
     "RunSummary",
+    "WrittenReport",
     "channel_keys_from",
     "deliver_report",
+    "email_attempts",
     "fixture_readers",
     "live_readers",
+    "live_report",
     "manual_proposals",
     "previous_snapshot",
+    "resend_report",
     "run_replenishment",
+    "week_already_done",
 ]

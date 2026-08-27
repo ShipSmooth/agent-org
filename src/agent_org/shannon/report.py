@@ -84,6 +84,25 @@ def pack_overage_line(plan: ComponentPlan) -> str | None:
     )
 
 
+def _route_name(routing: str) -> str:
+    """`nar_cart` as Zach says it out loud, with the route kept alongside.
+
+    The route strings are what the config and the coming cart-staging work
+    key on, so they stay visible; nobody should have to translate between
+    the summary and the section it summarises.
+    """
+    if routing == "gap_list":
+        return "gap list — order by hand"
+    if routing.endswith("_cart"):
+        return f"{routing[: -len('_cart')].replace('_', ' ')} cart"
+    return routing
+
+
+def _count(number: int, singular: str, plural: str) -> str:
+    """ "1 warning", not "1 warnings" — this is read at speed on a phone."""
+    return f"{number} {singular if number == 1 else plural}"
+
+
 @dataclass(frozen=True)
 class ReportContext:
     entity_name: str
@@ -95,6 +114,61 @@ class ReportContext:
     blocked: tuple[str, ...] = ()
 
 
+def summary_block(
+    result: ReplenishmentResult, config: LoadedConfig, context: ReportContext
+) -> list[str]:
+    """The first thing in the email: what needs doing, and how much of it.
+
+    Everything here is counted from the same lists the sections below
+    print, never from a second calculation — a summary that disagreed with
+    its own report would be worse than no summary. The detail stays exactly
+    where it was; this only says where to look first.
+    """
+    lines: list[str] = []
+    add = lines.append
+
+    to_order = [plan for plan in result.components if plan.order_units > 0]
+    by_route: dict[str, int] = {}
+    for plan in to_order:
+        by_route[plan.routing] = by_route.get(plan.routing, 0) + 1
+    blocking = [
+        plan for plan in result.components if plan.sufficiency is Sufficiency.BLOCKING_BUILD
+    ]
+    warnings = len(result.warnings) + len(context.validation_warnings)
+    open_parking = len([item for item in config.boms.parking_lot if not item.resolved]) + len(
+        result.parking_lot_additions
+    )
+
+    add("AT A GLANCE")
+    add(THIN)
+    if to_order:
+        add(f"  {_count(len(to_order), 'line', 'lines')} to order:")
+        # Busiest route first: the question being answered is "what am I
+        # doing first", and the routes are where the doing happens.
+        for routing, count in sorted(by_route.items(), key=lambda pair: (-pair[1], pair[0])):
+            add(f"      {routing:<22} {count:>3}   ({_route_name(routing)})")
+    else:
+        add("  Nothing to order.")
+    if blocking:
+        # Named, not counted: nothing else in the report is both urgent and
+        # invisible in the order list, because the order quantity is zero.
+        add(f"  {_count(len(blocking), 'line', 'lines')} out of stock and stopping a build:")
+        for plan in blocking:
+            add(f"      {plan.key}  {plan.name} — {plan.sufficiency_reason}.")
+    else:
+        add("  Nothing is out of stock and stopping a build.")
+    add(f"  {_count(warnings, 'warning', 'warnings')}.")
+    add(f"  {_count(open_parking, 'open parking-lot question', 'open parking-lot questions')}.")
+    if context.blocked:
+        add(
+            f"  {_count(len(context.blocked), 'line', 'lines')} Shannon could not "
+            "calculate at all — see BLOCKED."
+        )
+    add("")
+    add("  The full report is below, unchanged. Nothing here is ordered or staged.")
+    return lines
+
+
 def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportContext) -> str:
     lines: list[str] = []
     add = lines.append
@@ -103,6 +177,8 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
     add(f"SHANNON — WEEKLY REPLENISHMENT REPORT — {context.entity_name}")
     add(f"Generated {context.generated_at:%A %d %B %Y, %H:%M %Z}")
     add(RULE)
+    add("")
+    lines.extend(summary_block(result, config, context))
     add("")
     add("PHASE 2 — READ ONLY, PLUS THIS EMAIL. Shannon read Veeqo and the inbox, did the")
     add("arithmetic, wrote this report, and emailed it to you. Nothing was ordered, no cart was")
@@ -409,4 +485,4 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
     return "\n".join(lines) + "\n"
 
 
-__all__ = ["ReportContext", "render"]
+__all__ = ["ReportContext", "render", "summary_block"]

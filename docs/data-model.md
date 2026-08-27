@@ -280,6 +280,29 @@ CREATE TABLE manual_stock_proposals (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
     UNIQUE (entity_id, supplier, part, counted_on)
 );
+
+-- ============ cart_stagings (one SKU put in one cart, once) =========
+-- A cart line cannot be taken back out, so staging has to be safe to
+-- repeat: the unique key is what stops a retried run adding the same SKU
+-- to the same supplier's cart twice in the same week. DRY_RUN and LIVE
+-- are separate keys on purpose — a rehearsal must not suppress the real
+-- thing. See docs/cart-staging.md.
+CREATE TABLE cart_stagings (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity_id     TEXT NOT NULL REFERENCES entities(id),
+    task_id       UUID NOT NULL REFERENCES tasks(id),
+    supplier      TEXT NOT NULL,
+    schedule_slot TEXT NOT NULL,                 -- the week, as the queue names it
+    sku           TEXT NOT NULL,                 -- the supplier's own number
+    quantity      INT NOT NULL CHECK (quantity > 0),   -- purchase units
+    units         INT NOT NULL,                  -- the sellable units that buys
+    mode          TEXT NOT NULL CHECK (mode IN ('DRY_RUN', 'LIVE')),
+    status        TEXT NOT NULL CHECK (status IN ('PLANNED','ADDED','FAILED','SKIPPED')),
+    cart_id       TEXT,
+    error         TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    UNIQUE (entity_id, supplier, schedule_slot, sku, mode)
+);
 ```
 
 ## Row-level security

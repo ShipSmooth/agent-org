@@ -1,0 +1,19 @@
+{
+  "id": "fixture-quote-1",
+  "grand_total": "189.90",
+  "quote_currency_code": "USD",
+  "items": [
+    {
+      "sku": "30-0002",
+      "name": "C-A-T Tourniquet GEN 7 — Black",
+      "qty": 4,
+      "price": "27.99"
+    },
+    {
+      "sku": "80-0167",
+      "name": "Individual Patrol Officer Kit (IPOK) — Gauze (no Hemostatic)",
+      "qty": 2,
+      "price": "38.97"
+    }
+  ]
+}

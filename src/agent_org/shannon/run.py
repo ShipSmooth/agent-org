@@ -277,9 +277,13 @@ def _excluded_channels_line(config: LoadedConfig) -> tuple[str, ...]:
     )
 
 
-def _report_lines(result: ReplenishmentResult) -> list[dict[str, str | int | None]]:
-    """The report's numbers in structured form, for the database row."""
-    lines: list[dict[str, str | int | None]] = []
+def _report_lines(result: ReplenishmentResult) -> list[dict[str, str | int | bool | None]]:
+    """The report's numbers in structured form, for the database row.
+
+    Read back by cart staging, which acts on exactly these numbers rather
+    than working the week out a second time.
+    """
+    lines: list[dict[str, str | int | bool | None]] = []
     for plan in result.components:
         lines.append(
             {
@@ -292,6 +296,12 @@ def _report_lines(result: ReplenishmentResult) -> list[dict[str, str | int | Non
                 "rounded_to_five": plan.order_units,
                 "purchase_units": plan.purchase_units,
                 "actual_units": plan.actual_units,
+                # Kept on the row because staging reads it back: a cart
+                # takes purchase units, and a line whose part number is ours
+                # rather than the supplier's has no SKU to add at all.
+                "units_per_purchase_unit": plan.units_per_purchase_unit,
+                "purchase_unit_name": plan.purchase_unit_name,
+                "part_is_internal_reference": plan.part_is_internal_reference,
                 "on_hand": plan.on_hand,
                 "on_order": plan.on_order,
                 "in_transit": plan.in_transit,

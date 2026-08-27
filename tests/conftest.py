@@ -95,6 +95,7 @@ def entity_id(owner_conn: psycopg.Connection[tuple[object, ...]], app_dsn: str) 
         # earnest — only here, to give each test an empty ledger.
         cur.execute("DELETE FROM report_emails WHERE entity_id = 'ithrive'")
         cur.execute("DELETE FROM manual_stock_proposals WHERE entity_id = 'ithrive'")
+        cur.execute("DELETE FROM cart_stagings WHERE entity_id = 'ithrive'")
         cur.execute("DELETE FROM reports WHERE entity_id = 'ithrive'")
         cur.execute("DELETE FROM tasks WHERE entity_id = 'ithrive'")
     owner_conn.commit()

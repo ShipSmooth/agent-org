@@ -26,7 +26,13 @@ from agent_org.db.connection import (
 from agent_org.db.migrate import run_migrations
 from agent_org.db.sync import sync_config
 from agent_org.env import load_env_file
+from agent_org.integrations.carts import CartRefusal, CartUnavailable
 from agent_org.integrations.reads import ReadFailure
+from agent_org.runtime.staging import (
+    NothingToStage,
+    deliver_staging_report,
+    stage_supplier_cart,
+)
 from agent_org.runtime.worker import (
     NothingToResend,
     RunAlreadyDone,
@@ -275,6 +281,77 @@ def cmd_resend(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_stage(args: argparse.Namespace) -> int:
+    """Put this week's reported lines in a supplier's cart, or rehearse it.
+
+    It calculates nothing. It reads the report Shannon already wrote for
+    the week and acts on the lines that report routes to this supplier's
+    cart, which is why a wrong number is fixed with `shannon run --again`
+    and never here.
+    """
+    config = _load(args)
+    try:
+        settings = DatabaseSettings.from_env()
+    except DatabaseNotConfigured as exc:
+        print(str(exc))
+        return EXIT_PROBLEM
+
+    dry_run = not args.live
+    fixtures = Path(args.fixtures) if args.fixtures else None
+    try:
+        with connect(settings.app_dsn) as conn:
+            with entity_session(conn, config.entity_id) as scoped:
+                summary = stage_supplier_cart(
+                    conn=scoped,
+                    config=config,
+                    supplier=args.supplier,
+                    output_dir=Path(args.output),
+                    fixtures=fixtures,
+                    dry_run=dry_run,
+                    week=args.week,
+                    now=datetime.now(tz=UTC),
+                )
+            conn.commit()
+            if summary.error is None and not args.no_email:
+                with entity_session(conn, config.entity_id) as scoped:
+                    summary = deliver_staging_report(conn=scoped, config=config, summary=summary)
+                conn.commit()
+    except NothingToStage as exc:
+        print(str(exc))
+        return EXIT_PROBLEM
+    except (CartUnavailable, CartRefusal) as exc:
+        print(str(exc))
+        print("Nothing was added to the cart.")
+        return EXIT_PROBLEM
+
+    if summary.error is not None:
+        print(f"Nothing was staged: {summary.error}")
+        return EXIT_PROBLEM
+    verb = "would be added" if summary.dry_run else "added"
+    print(f"{summary.staged} line(s) {verb} to the {summary.supplier} cart.")
+    if summary.failed:
+        print(f"{summary.failed} line(s) could NOT be added — see the report.")
+    if summary.plan.skipped:
+        print(
+            f"{len(summary.plan.skipped)} line(s) have no supplier SKU and must be "
+            "ordered by hand — see the report."
+        )
+    print(f"Report written to {summary.report_path}")
+    if summary.email_error is not None:
+        print(f"\nThe report was NOT emailed: {summary.email_error}")
+        print("The report itself is written and safe, and the failed attempt is recorded.")
+        return EXIT_PROBLEM
+    if summary.emailed_to:
+        print(f"Emailed to {', '.join(summary.emailed_to)} — subject: {summary.email_subject}")
+    if summary.dry_run:
+        print("This was a dry run: the cart was read and nothing in it was changed.")
+    print(
+        "Nothing was submitted, no payment was made and no order was placed. "
+        "Review the cart and order it yourself."
+    )
+    return EXIT_OK
+
+
 def cmd_schedule(args: argparse.Namespace) -> int:
     config = _load(args)
     now = datetime.now(tz=UTC)
@@ -413,6 +490,51 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     resend_cmd.set_defaults(func=cmd_resend)
+
+    stage_cmd = sub.add_parser(
+        "stage",
+        help=(
+            "put the lines this week's report routes to a supplier's cart into "
+            "that cart, and email a confirmation. Reads the report already in the "
+            "database — it works nothing out again. It never checks out, never "
+            "pays and never places an order, at any tier. Without --live it is a "
+            "dry run: the cart is read and nothing in it is changed."
+        ),
+    )
+    stage_cmd.add_argument(
+        "--supplier", default="nar", help="which supplier's cart to stage (nar today)"
+    )
+    stage_cmd.add_argument(
+        "--week",
+        default=None,
+        help="the ISO week to stage, as 2026-W35. Defaults to the week it is now",
+    )
+    stage_cmd.add_argument(
+        "--fixtures",
+        default="tests/fixtures/golden/data",
+        help=(
+            "folder holding a saved copy of the cart to read instead of the live "
+            "site. Pass an empty value (--fixtures '') to read the real cart, "
+            "which needs the supplier login in the environment"
+        ),
+    )
+    stage_cmd.add_argument(
+        "--output", default="reports", help="folder to write the confirmation report into"
+    )
+    stage_cmd.add_argument(
+        "--no-email", action="store_true", help="write the confirmation report but do not email it"
+    )
+    stage_cmd.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "actually add the lines to the supplier's cart instead of rehearsing "
+            "it. Refused while the phase ceiling in config/policy/global.yaml is "
+            "0, which it is. Even then it stages only: no checkout, no payment, "
+            "no order"
+        ),
+    )
+    stage_cmd.set_defaults(func=cmd_stage)
 
     schedule_cmd = sub.add_parser(
         "schedule",

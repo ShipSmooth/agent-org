@@ -56,6 +56,16 @@ rules:
   # the report row; it cannot be pointed at a supplier.
   - action: internal.email_report_to_owner
     tier: 0
+  # The rehearsal for staging a cart: read the supplier's cart, work out
+  # exactly which SKUs and quantities would be added, write that down.
+  # Tier 0 because nothing outside this machine changes — the supplier is
+  # read, never written — which is what makes the plan provable while the
+  # phase ceiling is still 0. The staging itself is `nar.stage_cart`,
+  # below, and is a different action with a different tier. The supplier
+  # must still hold `stage_cart` for this to be allowed at all: rehearsing
+  # a cart Zach has not authorised is not a read he asked for.
+  - action: nar.plan_cart_staging
+    tier: 0
 
   # ---- Tier 1: internal state, notify after ----
   - action: internal.enqueue_task

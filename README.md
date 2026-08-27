@@ -68,6 +68,7 @@ uv run shannon sync-config       # copy the configuration into the database
 uv run shannon run               # this week's run → a report file
 uv run shannon run --again       # work a finished week out afresh, as often as asked
 uv run shannon resend            # email the report that already exists, unchanged
+uv run shannon stage             # put this week's NAR lines in the cart — dry run by default
 uv run shannon schedule          # what is scheduled, and whether it is due
 ```
 

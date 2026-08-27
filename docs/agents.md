@@ -49,6 +49,9 @@ address is a vendor/tooling identity and receives no agent mail.
   quantities only, never the status field)
 - `internal.*` state writes (Tier 1)
 - `amazon_business.stage_cart` (Tier 1, ops-consumable cart URL)
+- `nar.plan_cart_staging` (Tier 0 — the dry run: reads the NAR cart and
+  works out what would be added, writing nothing to the site; see
+  docs/cart-staging.md)
 - `nar.stage_cart` (Tier 2), `dynarex.stage_cart` (Tier 2), `notify.email`
   (Tier 2), `notify.sms` (Tier 2, urgent/anomalous only)
 - `internal.email_report_to_owner` (Tier 0) — the one send Shannon makes

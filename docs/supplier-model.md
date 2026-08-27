@@ -73,7 +73,9 @@ The replenishment output is split per supplier (docs/replenishment.md §5):
 Enforcement is layered: (1) the calculator only *generates* actionable lines
 for capable suppliers; (2) the ActionBroker independently re-checks
 capability on every proposal, so a calculator bug cannot smuggle a Dynarex
-order through; (3) the audit log records the capability check outcome.
+order through; (3) the audit log records the capability check outcome;
+(4) the client that talks to the supplier has no method, path or HTTP verb
+that could check out, pay or place an order — see docs/cart-staging.md.
 
 ## Adding or upgrading a supplier
 

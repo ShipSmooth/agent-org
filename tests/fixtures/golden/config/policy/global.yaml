@@ -49,6 +49,11 @@ rules:
   # reports to. Deliberately not `notify.email`, which stays Tier 2.
   - action: internal.email_report_to_owner
     tier: 0
+  # Reading a supplier's cart and writing down what would be added to it.
+  # Tier 0 because the supplier is read and never written; the staging
+  # itself is `nar.stage_cart` and is a different action at Tier 2.
+  - action: nar.plan_cart_staging
+    tier: 0
 
   # ---- Tier 1: internal state, notify after ----
   - action: internal.enqueue_task

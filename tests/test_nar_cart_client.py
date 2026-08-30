@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-
 from typing import Any
 
 import httpx
@@ -53,21 +52,20 @@ IPOK: dict[str, Any] = {
         },
     ],
 }
-TOURNIQUET: dict[str, Any] = {"sku": "30-0002", "name": "C-A-T Tourniquet GEN 7", "__typename": "SimpleProduct"}
+TOURNIQUET: dict[str, Any] = {
+    "sku": "30-0002",
+    "name": "C-A-T Tourniquet GEN 7",
+    "__typename": "SimpleProduct",
+}
 
 
-def _catalogue_response(
-    request: httpx.Request, products: list[dict[str, Any]]
-) -> httpx.Response:
+def _catalogue_response(request: httpx.Request, products: list[dict[str, Any]]) -> httpx.Response:
     asked = json.loads(request.content)["variables"]["sku"]
     found = [
         product
         for product in products
         if asked == product["sku"]
-        or any(
-            asked == variant["product"]["sku"]
-            for variant in product.get("variants", [])
-        )
+        or any(asked == variant["product"]["sku"] for variant in product.get("variants", []))
     ]
     return httpx.Response(200, json={"data": {"products": {"items": found}}})
 

@@ -96,6 +96,19 @@ def render(plan: StagingPlan, result: dict[str, Any], context: StagingContext) -
         out.append(f"  {_count(len(skipped))} were already staged this week and left alone.")
     if plan.skipped:
         out.append(f"  {_count(len(plan.skipped))} cannot be ordered by SKU — order those by hand.")
+    unverified = [line for line in added if line.get("verified") is False]
+    if unverified:
+        out += _wrapped(
+            f"CHECK THE CART YOURSELF: {_count(len(unverified))} went in, but the cart "
+            "afterwards does not hold what it should. Details below."
+        )
+    lost = list((result.get("kept") or {}).get("lost", []))
+    if lost:
+        out += _wrapped(
+            f"CHECK THE CART YOURSELF: the cart held {_count(len(lost))} before this run "
+            "that it no longer holds in full. Shannon cannot remove a line, so the "
+            "site did that."
+        )
     if dry_run:
         out += _wrapped(
             "This was a DRY RUN. The cart was read and nothing in it was changed. "
@@ -109,6 +122,8 @@ def render(plan: StagingPlan, result: dict[str, Any], context: StagingContext) -
     for line in added:
         out.append(f"  {line['sku']}  {line['name']}")
         out.append(f"      quantity: {line['quantity']}")
+        if line.get("verified") is True:
+            out.append("      checked against the cart afterwards: it is there")
         if line.get("staged_sku") and line["staged_sku"] != line["sku"]:
             # The cart's own answer, which for a configurable product is the
             # only trustworthy statement of what is in it.

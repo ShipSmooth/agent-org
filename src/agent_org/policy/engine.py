@@ -55,6 +55,20 @@ class PolicyEngine:
     def max_tier_this_phase(self) -> int:
         return self.policy.max_tier_this_phase
 
+    def ceiling_for(self, action_type: str) -> int:
+        """The ceiling this action faces: the phase's, unless it is excepted.
+
+        An exception is one named action allowed up to one named tier, so
+        turning on live cart staging cannot also turn on sending SMS or
+        updating Shopify. Raising `max_tier_this_phase` itself opens
+        everything at once, which is the right shape for a phase change and
+        the wrong shape for switching on one supplier.
+        """
+        return max(
+            self.policy.max_tier_this_phase,
+            self.policy.phase_exceptions.get(action_type, self.policy.max_tier_this_phase),
+        )
+
     def resolve(
         self,
         action_type: str,

@@ -611,6 +611,36 @@ def load_policy(global_path: Path, entity_path: Path | None) -> PolicyConfig:
             ]
         )
 
+    exceptions: dict[str, int] = {}
+    for item in _require_list(
+        raw.get("phase_exceptions", []), "phase_exceptions", raw.loc_of("phase_exceptions")
+    ):
+        entry = _require_map(item, "A phase exception", loc_of(item))
+        action = str(entry.get("action"))
+        up_to = _int_or_none(entry.get("up_to_tier"))
+        if up_to is None:
+            raise ConfigError(
+                [
+                    error(
+                        f"The phase exception for '{action}' has no 'up_to_tier'. An "
+                        "exception has to say how far it goes.",
+                        entry.loc,
+                    )
+                ]
+            )
+        if action not in rules:
+            raise ConfigError(
+                [
+                    error(
+                        f"The phase exception names '{action}', which has no rule. An "
+                        "exception to a ceiling cannot be the only place an action is "
+                        "mentioned.",
+                        entry.loc,
+                    )
+                ]
+            )
+        exceptions[action] = up_to
+
     if entity_path is not None and entity_path.exists():
         entity_raw = _require_map(
             load_yaml_file(entity_path), "The entity policy file", Loc(str(entity_path), 1)
@@ -648,6 +678,7 @@ def load_policy(global_path: Path, entity_path: Path | None) -> PolicyConfig:
         accepted_irreversible=tuple(
             str(action) for action in raw.get("accepted_irreversible_actions", [])
         ),
+        phase_exceptions=exceptions,
     )
 
 

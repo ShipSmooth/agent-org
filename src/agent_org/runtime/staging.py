@@ -40,7 +40,7 @@ from agent_org.config.models import LoadedConfig
 from agent_org.integrations.carts import CartRefusal, CartUnavailable, SupplierCart
 from agent_org.integrations.nar import NarCartClient, NarFixtureCart
 from agent_org.notify.email import Sender, SendFailed, SmtpSender
-from agent_org.policy.engine import PolicyEngine
+from agent_org.policy.engine import ActionContext, PolicyEngine, TrailingHistory
 from agent_org.shannon.config_diff import ConfigSnapshot
 from agent_org.shannon.staging import StagingPlan, plan_from_report_lines
 from agent_org.shannon.staging_report import StagingContext, render, subject_line
@@ -98,6 +98,38 @@ def reported_lines(
         )
     lines = row[0] if isinstance(row[0], list) else json.loads(str(row[0]))
     return list(lines), str(row[1]), str(row[2])
+
+
+def staging_history(
+    conn: psycopg.Connection[tuple[object, ...]], entity_id: str, supplier: str
+) -> TrailingHistory:
+    """What past live weeks put in this cart — the yardstick for "normal".
+
+    The anomaly escalations need something to compare a week against, and
+    for staging that is the weeks already staged, not purchase orders: no
+    order has ever been placed through this system. Until there are enough
+    of them, policy escalates to Tier 3 and says so, which is the honest
+    answer to "is this week unusual?" when there is nothing to be unusual
+    against.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT schedule_slot, SUM(units)::float
+              FROM cart_stagings
+             WHERE entity_id = %s AND supplier = %s AND mode = 'LIVE' AND status = 'ADDED'
+             GROUP BY schedule_slot
+            """,
+            (entity_id, supplier),
+        )
+        weeks = cur.fetchall()
+    if not weeks:
+        return TrailingHistory()
+    totals = [float(str(row[1] or 0)) for row in weeks]
+    return TrailingHistory(
+        order_count=len(totals),
+        average_total_units=sum(totals) / len(totals),
+    )
 
 
 def nar_cart(fixtures: Path | None, config: LoadedConfig) -> SupplierCart:
@@ -191,6 +223,18 @@ def stage_supplier_cart(
             },
             task_id=task.id,
             schedule_slot=slot,
+            # A dry run keeps the executor's own context: it is internal and
+            # reversible, and there is nothing about the size of it for
+            # policy to find unusual. A live run is measured.
+            context=None
+            if dry_run
+            else ActionContext(
+                reversible="window",
+                category="purchase",
+                total_units=sum(line.units for line in plan.lines),
+                line_quantities=tuple(line.quantity for line in plan.lines),
+            ),
+            history=None if dry_run else staging_history(conn, entity_id, supplier),
         )
     except (BrokerRefusal, CartUnavailable, CartRefusal) as exc:
         queue.fail(task, str(exc))

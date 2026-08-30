@@ -38,6 +38,47 @@ phase can run.
 `max_tier_this_phase` is 0. Raising that ceiling is a deliberate,
 reviewable change to policy — and it still cannot buy anything.
 
+Raising the ceiling to 2 would also switch on every other Tier 2 action —
+SMS, supplier mail — which is not what "let Shannon fill the NAR cart"
+means. So policy takes `phase_exceptions`: one action, by name, allowed
+above the ceiling and no further than the tier written beside it.
+
+    phase_exceptions:
+      - action: nar.stage_cart
+        up_to_tier: 2
+
+The list is empty today, so live staging is refused. An exception must
+name an action that already has a rule, and must say how far it goes;
+neither can be left out.
+
+## A configurable's variant comes from the catalogue, never the page
+
+80-0167 is not a product to post: it is the "Gauze (no Hemostatic)"
+variant of the configurable parent 80-0168-s, and its two siblings are
+different kits at roughly twice the price. So before adding a line
+Shannon reads `/graphql` for the SKU and gets back either a simple
+product — added as itself — or the parent plus the option value that
+selects that exact child, which is what goes in the payload.
+
+She refuses rather than guesses: an unknown SKU, a parent posted without a
+variant, a child the parent does not list, a missing option id or value
+index, or a catalogue that answers with anything unexpected all raise
+`CartRefusal` and stage nothing. Magento answers the add with the child it
+resolved, and that answer is compared with the child that was asked for;
+a mismatch, or a quantity that is not the one requested, fails the line
+loudly rather than leaving something unexplained in the cart.
+
+## What a live run checks afterwards
+
+A line is not called added because the site returned 200. After live
+staging Shannon reads the cart again and, per line, checks that it now
+holds what it held before plus what was added. She also checks that
+nothing that was in the cart beforehand has gone or shrunk — she cannot
+remove a line, so if one disappears the site did it, and the report says
+so in as many words. Either check failing produces a CHECK THE CART
+YOURSELF line at the top of the report; nothing is retried and nothing is
+reordered.
+
 ## Never checking out is code, not configuration
 
 Four independent things have to be true before a purchase could happen,
@@ -51,7 +92,8 @@ and each is somewhere different:
    is no checkout, no payment and no submit on the interface, so there is
    nothing for a caller — or a model — to reach for.
 3. **The paths are allow-listed.** `NarCartClient` may request exactly
-   four URLs. Anything else raises `CartRefusal` before a socket opens,
+   five URLs — a login, the cart, its totals, its items and the
+   catalogue. Anything else raises `CartRefusal` before a socket opens,
    and a second check refuses any path containing a checkout, order,
    payment or billing word even if someone adds it to the list later.
 4. **The methods are allow-listed.** Only GET and POST are ever sent.

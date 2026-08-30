@@ -115,6 +115,48 @@ def test_an_entity_can_raise_a_global_tier_but_never_lower_one(tmp_path: Path) -
     assert "may raise a tier, never lower one" in caught.value.findings[0].message
 
 
+def _policy_file(tmp_path: Path, exceptions: str) -> Path:
+    path = tmp_path / "global.yaml"
+    path.write_text(
+        "default_tier: 3\nmax_tier_this_phase: 0\n"
+        "rules:\n  - {action: nar.stage_cart, tier: 2}\n"
+        "  - {action: dynarex.stage_cart, tier: 2}\n"
+        f"phase_exceptions:{exceptions}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_one_action_can_be_let_above_the_ceiling_without_letting_the_rest(
+    tmp_path: Path,
+) -> None:
+    """How live NAR staging gets switched on: by name, not by raising the phase."""
+    exception = "\n  - {action: nar.stage_cart, up_to_tier: 2}"
+    policy = load_policy(_policy_file(tmp_path, exception), None)
+    engine = PolicyEngine(policy)
+    assert engine.ceiling_for("nar.stage_cart") == 2
+    assert engine.ceiling_for("dynarex.stage_cart") == 0
+    assert policy.max_tier_this_phase == 0
+
+
+def test_with_no_exception_written_down_nothing_is_above_the_ceiling(tmp_path: Path) -> None:
+    engine = PolicyEngine(load_policy(_policy_file(tmp_path, " []"), None))
+    assert engine.ceiling_for("nar.stage_cart") == 0
+
+
+def test_an_exception_has_to_say_how_far_it_goes(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError) as caught:
+        load_policy(_policy_file(tmp_path, "\n  - {action: nar.stage_cart}"), None)
+    assert "no 'up_to_tier'" in caught.value.findings[0].message
+
+
+def test_an_exception_cannot_be_the_only_mention_of_an_action(tmp_path: Path) -> None:
+    """Otherwise a typo invents an action and permits it in one line."""
+    with pytest.raises(ConfigError) as caught:
+        load_policy(_policy_file(tmp_path, "\n  - {action: nar.stage_carts, up_to_tier: 2}"), None)
+    assert "has no rule" in caught.value.findings[0].message
+
+
 def test_only_the_report_writer_is_wired_up_in_this_phase(
     app_conn: psycopg.Connection[tuple[object, ...]],
     entity_id: str,

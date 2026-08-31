@@ -195,14 +195,9 @@ class NarCatalogue:
     transport: httpx.BaseTransport | None = field(default=None, compare=False)
 
     def resolve(self, sku: str) -> CartItem:
-        product = self._product(sku)
+        product = self._match(sku, self._products(sku))
         typename = str(product.get("__typename", ""))
         if typename != "ConfigurableProduct":
-            if str(product.get("sku", "")) != sku:
-                raise CartRefusal(
-                    f"The catalogue answers '{product.get('sku')}' for {sku}, which is "
-                    "not the same product. Nothing was added; check the part number."
-                )
             return CartItem(sku=sku, expect_sku=sku, name=str(product.get("name", "")))
 
         parent = str(product.get("sku", ""))
@@ -241,13 +236,45 @@ class NarCatalogue:
                         "added; this one has to go in the cart by hand."
                     )
                 chosen.append((option_id, int(value)))
-            if not chosen:
-                break
-            return tuple(chosen)
+            if chosen:
+                return tuple(chosen)
+            break
         raise CartRefusal(
-            f"{sku} is not one of {parent}'s variants ({self._variant_skus(product)}), "
-            "so it cannot be added as one. Nothing was added."
+            f"The catalogue lists {sku} under {parent} ({self._variant_skus(product)}) "
+            "but says nothing that selects it. Nothing was added; this one has to go "
+            "in the cart by hand."
         )
+
+    @staticmethod
+    def _match(sku: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """The one product that is this SKU, out of everything that came back.
+
+        A SKU filter on narescue.com is not the exact lookup its name
+        suggests: asking for 30-0052 also answers with the kits that have a
+        30-0052 inside them, and the first of those is a real product with
+        a real name that is simply not the part being ordered. So every
+        answer is checked, and only two things count as this SKU: a product
+        whose own SKU is it, or a configurable that lists it as one of its
+        variants. Anything else is the catalogue talking about something
+        else, and is not a reason to say the part number is wrong.
+        """
+        for item in items:
+            if str(item.get("sku", "")) == sku:
+                return item
+        for item in items:
+            variants = item.get("variants") or []
+            if any(str((v.get("product") or {}).get("sku", "")) == sku for v in variants):
+                return item
+        raise CartRefusal(
+            f"The narescue.com catalogue has no product with SKU {sku}. It offered "
+            f"{NarCatalogue._skus(items)}, which are other products that mention it "
+            "rather than the part itself. Nothing was added — check the part number."
+        )
+
+    @staticmethod
+    def _skus(items: list[dict[str, Any]]) -> str:
+        skus = [str(item.get("sku", "")) for item in items]
+        return ", ".join(sku for sku in skus if sku) or "nothing"
 
     @staticmethod
     def _variant_name(product: dict[str, Any], sku: str) -> str:
@@ -265,7 +292,7 @@ class NarCatalogue:
         ]
         return ", ".join(sku for sku in skus if sku) or "none listed"
 
-    def _product(self, sku: str) -> dict[str, Any]:
+    def _products(self, sku: str) -> list[dict[str, Any]]:
         refuse_unless_safe("POST", GRAPHQL_PATH)
         with httpx.Client(
             base_url=self.base_url,
@@ -303,8 +330,7 @@ class NarCatalogue:
                 "added — a SKU the site does not know is a parts-list error, not a cart "
                 "to guess at."
             )
-        first = items[0]
-        return dict(first) if isinstance(first, dict) else {}
+        return [dict(item) for item in items if isinstance(item, dict)]
 
 
 @dataclass

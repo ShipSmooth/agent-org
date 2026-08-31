@@ -112,6 +112,9 @@ def test_a_live_run_left_on_the_default_takes_the_real_cart_rather_than_the_save
         asked.update(kwargs)
         raise NothingToStage("stopped here; the point is which cart was chosen")
 
+    # No database is reached, so any DSN will do; the CLI checks for one
+    # before it gets as far as choosing a cart.
+    monkeypatch.setenv("DATABASE_URL", "postgresql://nowhere/nothing")
     monkeypatch.setattr("agent_org.cli.stage_supplier_cart", record)
     monkeypatch.setattr("agent_org.cli.connect", _no_database)
     monkeypatch.setattr("agent_org.cli.entity_session", _no_database)

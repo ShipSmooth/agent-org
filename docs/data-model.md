@@ -301,8 +301,12 @@ CREATE TABLE cart_stagings (
     cart_id       TEXT,
     error         TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
     UNIQUE (entity_id, supplier, schedule_slot, sku, mode)
 );
+-- A row moves on from FAILED and never from ADDED: the attempt after a
+-- failed one is the attempt that put the line in the cart, and a row still
+-- reading FAILED hides that line from the next run's skip.
 ```
 
 ## Row-level security

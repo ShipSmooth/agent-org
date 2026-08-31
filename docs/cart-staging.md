@@ -77,6 +77,13 @@ leave the week unstageable, which is the wrong answer to "try that
 again". `shannon stage --again` raises the ceiling by one, the same way
 `shannon run --again` does for a report.
 
+A ledger row moves on from FAILED and never from ADDED. The first live
+attempt at a week can leave a FAILED row behind for a line the attempt
+after it really does add, and FAILED is not a status the skip recognises
+— so the add is written over the failure, while ADDED stays whatever
+happens later. Getting this backwards is what put twice the quantity in
+the real cart in week 36.
+
 Repeating a live action is normally impossible: the broker fingerprints
 each one and returns the earlier outcome instead of doing it twice.
 `nar.stage_cart` is passed to the broker as a *ledgered* action, so a
@@ -159,7 +166,9 @@ depths:
   SKU per week per supplier per mode, with a unique key. The executor
   consults it per line, so a crashed run retried with a payload the broker
   sees as new still cannot add the same SKU twice. It reports the line as
-  already staged instead.
+  already staged instead. A row that says FAILED is upgraded by the
+  attempt that succeeds (migration 0010); a row that says ADDED is never
+  written over.
 
 A dry run is recorded under mode `DRY_RUN` and therefore never suppresses
 the live staging that follows it: a rehearsal that cancelled the

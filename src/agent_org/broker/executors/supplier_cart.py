@@ -207,12 +207,29 @@ class CartStager:
         cart_id: str | None,
         error: str | None,
     ) -> None:
+        """Write down what happened to this line, once and for good.
+
+        A row that already says ADDED or PLANNED is never written over:
+        that row is the record of something in a cart, and the whole point
+        of the table is that it cannot be undone or forgotten. A row that
+        says FAILED is a different matter — the attempt after it is the one
+        that put the line in the cart, and leaving the old status there
+        would hide a real cart line from the next run's skip.
+        """
         self.conn.execute(
             """
             INSERT INTO cart_stagings (entity_id, task_id, supplier, schedule_slot, sku,
                                        quantity, units, mode, status, cart_id, error)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (entity_id, supplier, schedule_slot, sku, mode) DO NOTHING
+            ON CONFLICT (entity_id, supplier, schedule_slot, sku, mode) DO UPDATE
+               SET task_id = EXCLUDED.task_id,
+                   quantity = EXCLUDED.quantity,
+                   units = EXCLUDED.units,
+                   status = EXCLUDED.status,
+                   cart_id = EXCLUDED.cart_id,
+                   error = EXCLUDED.error,
+                   updated_at = clock_timestamp()
+             WHERE cart_stagings.status NOT IN ('PLANNED', 'ADDED')
             """,
             (
                 self.entity_id,

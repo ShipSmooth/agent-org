@@ -307,6 +307,61 @@ def test_only_loose_matches_means_the_part_number_is_wrong_and_says_so() -> None
     assert "85-0715" in str(refusal.value)
 
 
+# 82-0075 is a part Zach buys weekly. The SKU filter answers with nothing
+# at all for it, because the catalogue holds it only as a child of the
+# configurable 82-0075-c — a search finds that parent, the filter does not.
+TPAK_PARENT: dict[str, Any] = {
+    "sku": "82-0075-c",
+    "name": "Mini Trail Personal Aid Kit (Mini TPAK) - LOKSAK",
+    "__typename": "ConfigurableProduct",
+    "configurable_options": [
+        {"attribute_id": "201", "attribute_code": "kit_contents", "label": "Contents"}
+    ],
+    "variants": [
+        {
+            "product": {"sku": "82-0075", "name": "Mini Trail Personal Aid Kit - Basic"},
+            "attributes": [{"code": "kit_contents", "value_index": 310}],
+        },
+        {
+            "product": {"sku": "82-0076", "name": "Mini Trail Personal Aid Kit - with BCD"},
+            "attributes": [{"code": "kit_contents", "value_index": 311}],
+        },
+    ],
+}
+
+
+def _filter_then_search(on_search: list[dict[str, Any]]) -> httpx.MockTransport:
+    """A catalogue whose SKU filter finds nothing and whose search does."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == GRAPHQL_PATH
+        body = json.loads(request.content)
+        found = [] if "filter:" in body["query"] else on_search
+        return httpx.Response(200, json={"data": {"products": {"items": found}}})
+
+    return httpx.MockTransport(handle)
+
+
+def test_a_part_the_sku_filter_cannot_see_is_found_by_searching() -> None:
+    catalogue = NarCatalogue(transport=_filter_then_search([TPAK_PARENT]))
+    item = catalogue.resolve("82-0075")
+    assert (item.sku, item.expect_sku, item.options) == ("82-0075-c", "82-0075", (("201", 310),))
+
+
+def test_the_search_fallback_is_a_wider_net_and_not_a_looser_standard() -> None:
+    """The search answers, but with something that is not the part."""
+    catalogue = NarCatalogue(transport=_filter_then_search([KIT_WITH_THE_PART]))
+    with pytest.raises(CartRefusal, match="no product with SKU 82-0075") as refusal:
+        catalogue.resolve("82-0075")
+    assert "85-0715" in str(refusal.value)
+
+
+def test_a_sku_neither_way_knows_is_reported_as_a_parts_list_error() -> None:
+    catalogue = NarCatalogue(transport=_filter_then_search([]))
+    with pytest.raises(CartRefusal, match="by filter or by search"):
+        catalogue.resolve("99-9999")
+
+
 def test_refuses_the_path_that_places_an_order(login: None) -> None:
     client = _client()
     with pytest.raises(CartRefusal, match="checkout, order or payment"):

@@ -118,6 +118,14 @@ it, or a returned configurable lists it among its variants. Anything else
 is a different product that merely mentions it, and only the complete
 absence of an exact match means the part number is wrong.
 
+The filter also misses. 82-0075, a kit Zach buys every week, comes back
+from it as nothing at all — the catalogue holds that part only as a child
+of the configurable 82-0075-c, which a search finds and the filter does
+not. So a SKU that the filter cannot place is asked for again as a
+search, and the same exact-match test is applied to what comes back: a
+wider net, never a looser standard. Only when neither way holds the part
+is the part number called wrong.
+
 ## What a live run checks afterwards
 
 A line is not called added because the site returned 200. After live

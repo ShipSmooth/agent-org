@@ -242,6 +242,17 @@ components:
   - {supplier: nar, part: "80-0439", name: "K-9 Handler IFAK Kit (Black)",
      class: forecast, units_per_purchase_unit: 1, resale_only: true,
      note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-0452", name: "Basic Public Access Individual Bleeding Control Kit - Nylon",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Bought in ones — no case, no minimum above 1.
+            $59.97 (Zach, 30 Aug 2026); NAR lists $95.99. One of the three SKUs
+            deliberately stocked at Amazon FBA. A child variant of configurable
+            80-0453-c. Added 30 Aug 2026 from Zach's working NAR list."}
+  - {supplier: nar, part: "80-0465", name: "Basic Public Access Individual Bleeding Control Kit - Vacuum Sealed",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Bought in ones. $47.97 (Zach, 30 Aug 2026);
+            NAR lists $73.99. A child variant of configurable 80-0466-c.
+            Added 30 Aug 2026 from Zach's working NAR list."}
   - {supplier: nar, part: "80-0494", name: "M-FAK Mini First Aid Kit (Black)",
      class: forecast, units_per_purchase_unit: 1, resale_only: true,
      note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
@@ -254,9 +265,20 @@ components:
   - {supplier: nar, part: "80-0901", name: "Public Access Individual Bleeding Control Blue Trainer Kit",
      class: forecast, units_per_purchase_unit: 1, resale_only: true,
      note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-0947", name: "Trauma and First Aid Kit - Class A",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Bought in ones. $149.97 (Zach, 30 Aug 2026);
+            NAR lists $226.99. A child variant of configurable 80-0947_80-1045.
+            Added 30 Aug 2026 from Zach's working NAR list."}
   - {supplier: nar, part: "80-1030", name: "M-FAK Resupply Kit",
      class: forecast, units_per_purchase_unit: 1, resale_only: true,
      note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
+  - {supplier: nar, part: "80-1034", name: "Trauma and First Aid Kits (TFAK) Hard Case - Class B Basic - Red",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Bought in ones. $363.97 (Zach, 30 Aug 2026);
+            NAR lists $551.99. A child variant of configurable 80-1034_80-1048 —
+            the red one; the same kit exists in orange and yellow under other part
+            numbers. Added 30 Aug 2026 from Zach's working NAR list."}
   - {supplier: nar, part: "80-1049", name: "ROO M-FAK First Aid Kit (Black)",
      class: forecast, units_per_purchase_unit: 1, resale_only: true,
      note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
@@ -284,6 +306,12 @@ components:
   - {supplier: nar, part: "80-1703", name: "ROO Mini First Aid Kit M-FAK LCL (Black)",
      class: forecast, units_per_purchase_unit: 1, resale_only: true,
      note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+  - {supplier: nar, part: "82-0075", name: "Mini Trail Personal Aid Kit - Basic - LOKSAK",
+     class: forecast, units_per_purchase_unit: 1, resale_only: true,
+     note: "Resold standalone; in no kit. Bought in ones. $67.97 (Zach, 30 Aug 2026).
+            A child variant of configurable 82-0075-c, and the one part on this list
+            the catalogue will not return for an exact-SKU filter — it is found by
+            searching. Added 30 Aug 2026 from Zach's working NAR list."}
   - {supplier: nar, part: "85-0008", name: "T.O.R.K. Tactical Operator Response Kit (Black)",
      class: forecast, units_per_purchase_unit: 1, resale_only: true,
      note: "Resold standalone; in no kit. Listing inactive at 24 Aug 2026."}
@@ -305,6 +333,13 @@ components:
   - {supplier: nar, part: "85-0834", name: "Compact Officer Response Emergency Core Kit",
      class: forecast, units_per_purchase_unit: 1, resale_only: true,
      note: "Resold standalone; in no kit. Listing active at 24 Aug 2026."}
+
+  # NAR parts Zach does NOT buy. They appear on his working weekly NAR list, so
+  # they are written down here as a decision rather than left out as an
+  # oversight — the next person to reconcile the two lists finds an answer
+  # instead of the same question. Both exist in NAR's catalogue.
+  #   80-0107  CCR-Mariner Kit - ORG                          not bought (Zach, 30 Aug 2026)
+  #   80-0027  NAR Hypothermia Prevention and Management Kit  not bought (Zach, 30 Aug 2026)
 
   # ---- SAM ----------------------------------------------------------------
   - {supplier: sam_medical, part: "XT600-OR-EN", name: "SAM XT Tourniquet, Metal Windlass, Orange",

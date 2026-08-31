@@ -245,7 +245,7 @@ def test_a_child_the_parent_does_not_list_is_refused() -> None:
     catalogue = NarCatalogue(
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json=answer))
     )
-    with pytest.raises(CartRefusal, match="not one of 80-0168-s's variants"):
+    with pytest.raises(CartRefusal, match="no product with SKU 80-0167"):
         catalogue.resolve("80-0167")
 
 
@@ -256,6 +256,55 @@ def test_the_catalogue_resolves_the_variant_zach_actually_buys() -> None:
         "80-0167",
         (("196", 149),),
     )
+
+
+# What narescue.com's own search does with a component part number: the
+# kits that contain it come back too, and they come back first.
+KIT_WITH_THE_PART: dict[str, Any] = {
+    "sku": "85-0715",
+    "name": "Public Access Bleeding Control Station",
+    "__typename": "SimpleProduct",
+}
+THE_PART: dict[str, Any] = {
+    "sku": "30-0052",
+    "name": "Combat Gauze LE",
+    "__typename": "SimpleProduct",
+}
+
+
+def _fuzzy_transport(products: list[dict[str, Any]]) -> httpx.MockTransport:
+    """A catalogue that answers a SKU filter with everything that mentions it."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == GRAPHQL_PATH
+        return httpx.Response(200, json={"data": {"products": {"items": products}}})
+
+    return httpx.MockTransport(handle)
+
+
+def test_a_kit_that_merely_contains_the_part_is_not_mistaken_for_the_part() -> None:
+    """narescue.com answers 30-0052 with the station that holds one, first.
+
+    Taking the first answer made a stocked part look like a wrong part
+    number, so every answer is read and only the part itself is staged.
+    """
+    catalogue = NarCatalogue(transport=_fuzzy_transport([KIT_WITH_THE_PART, THE_PART]))
+    item = catalogue.resolve("30-0052")
+    assert (item.sku, item.expect_sku, item.name) == ("30-0052", "30-0052", "Combat Gauze LE")
+
+
+def test_a_variant_is_still_found_when_it_is_not_the_first_answer() -> None:
+    catalogue = NarCatalogue(transport=_fuzzy_transport([KIT_WITH_THE_PART, IPOK]))
+    item = catalogue.resolve("80-0167")
+    assert (item.sku, item.expect_sku, item.options) == ("80-0168-s", "80-0167", (("196", 149),))
+
+
+def test_only_loose_matches_means_the_part_number_is_wrong_and_says_so() -> None:
+    """No exact match anywhere is the one case that is a parts-list error."""
+    catalogue = NarCatalogue(transport=_fuzzy_transport([KIT_WITH_THE_PART]))
+    with pytest.raises(CartRefusal, match="no product with SKU 30-0052") as refusal:
+        catalogue.resolve("30-0052")
+    assert "85-0715" in str(refusal.value)
 
 
 def test_refuses_the_path_that_places_an_order(login: None) -> None:

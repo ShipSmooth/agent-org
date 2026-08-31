@@ -103,6 +103,14 @@ resolved, and that answer is compared with the child that was asked for;
 a mismatch, or a quantity that is not the one requested, fails the line
 loudly rather than leaving something unexplained in the cart.
 
+A SKU filter on narescue.com is not the exact lookup its name suggests:
+asking for a component such as 30-0052 also answers with the kits that
+contain one, and those come back first. So the answer is a list to search,
+not a product: the SKU is this SKU only if a returned product's own SKU is
+it, or a returned configurable lists it among its variants. Anything else
+is a different product that merely mentions it, and only the complete
+absence of an exact match means the part number is wrong.
+
 ## What a live run checks afterwards
 
 A line is not called added because the site returned 200. After live

@@ -18,6 +18,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import psycopg
 import pytest
@@ -216,6 +217,83 @@ def test_the_ledger_stops_a_line_being_added_to_the_cart_twice(
     assert first["lines"][0]["status"] == "ADDED"
     assert second["lines"][0]["status"] == "SKIPPED"
     assert cart.added == [("80-0167", 20)], "the SKU must reach the cart exactly once"
+
+
+def test_a_line_that_failed_and_then_went_in_is_not_added_a_third_time(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    """The sequence that doubled Zach's real cart.
+
+    The week's first live attempt failed every line, so the ledger held a
+    FAILED row for the SKU. The attempt after it added the line for real —
+    and wrote nothing, because the row already existed. FAILED is not a
+    status the skip recognises, so the next attempt added the same line on
+    top of the one already in the cart. The row has to move to ADDED.
+    """
+    cart = RecordingCart(fail_on="80-0167")
+    payload = {
+        "schedule_slot": "shannon_cart_staging/nar/2026-W14",
+        "lines": [{"sku": "80-0167", "name": "IPOK", "quantity": 20, "units": 20}],
+    }
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        task_id = _a_task(conn, entity_id)
+
+        def stage() -> dict[str, Any]:
+            stager = CartStager(
+                conn=conn, entity_id=entity_id, supplier="nar", cart=cart, dry_run=False
+            )
+            return stager({**payload, "task_id": task_id})
+
+        refused = stage()
+        cart.fail_on = None
+        added = stage()
+        third = stage()
+        rows = _staged_rows(conn, entity_id)
+
+    assert refused["lines"][0]["status"] == "FAILED"
+    assert added["lines"][0]["status"] == "ADDED"
+    assert third["lines"][0]["status"] == "SKIPPED"
+    assert cart.added == [("80-0167", 20)], "the cart must hold one lot of 20, not two"
+    assert rows == [("80-0167", "ADDED")]
+
+
+def test_a_staged_line_is_never_written_over_by_a_later_failure(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    """ADDED is the record of something in a cart, so nothing may undo it."""
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        task_id = _a_task(conn, entity_id)
+        stager = CartStager(
+            conn=conn, entity_id=entity_id, supplier="nar", cart=RecordingCart(), dry_run=False
+        )
+        stager(
+            {
+                "task_id": task_id,
+                "schedule_slot": "shannon_cart_staging/nar/2026-W14",
+                "lines": [{"sku": "80-0167", "name": "IPOK", "quantity": 20, "units": 20}],
+            }
+        )
+        conn.execute(
+            """
+            INSERT INTO cart_stagings (entity_id, task_id, supplier, schedule_slot, sku,
+                                       quantity, units, mode, status, error)
+            VALUES (%s, %s, 'nar', 'shannon_cart_staging/nar/2026-W14', '80-0167',
+                    20, 20, 'LIVE', 'FAILED', 'a later run claiming it never happened')
+            ON CONFLICT (entity_id, supplier, schedule_slot, sku, mode) DO UPDATE
+               SET status = EXCLUDED.status
+             WHERE cart_stagings.status NOT IN ('PLANNED', 'ADDED')
+            """,
+            (entity_id, task_id),
+        )
+        assert _staged_rows(conn, entity_id) == [("80-0167", "ADDED")]
 
 
 def test_a_line_the_site_refuses_is_reported_and_the_rest_still_go_in(

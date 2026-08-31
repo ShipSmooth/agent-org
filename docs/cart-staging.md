@@ -5,9 +5,9 @@ supplier's cart. She does not check out. That is not a setting, and this
 document is mostly about why it cannot become one.
 
     uv run shannon stage                     # dry run: reads the cart, changes nothing
-    uv run shannon stage --live              # refused while max_tier_this_phase is 0
+    uv run shannon stage --live              # adds to the real cart; needs a phase exception
     uv run shannon stage --week 2026-W35     # a particular week
-    uv run shannon stage --fixtures ''       # read the real cart rather than a saved copy
+    uv run shannon stage --live-data         # read the real cart rather than a saved copy
 
 ## It acts on the report, and calculates nothing
 
@@ -24,6 +24,23 @@ Two conversions come off that row rather than being redone:
 - a line whose part number is *ours* — the supplier publishes none — has
   no SKU to add, so it is left out of the cart and named in the report as
   one to order by hand.
+
+## Which cart is being read
+
+A dry run reads the saved cart in `--fixtures` (a folder of golden data)
+unless `--live-data` says otherwise. `--live` always reads and writes the
+real cart: the default saved folder is dropped, and a saved folder asked
+for by name is refused outright rather than rehearsed — a saved cart
+cannot add a line, so a live run reading one would report every line as
+refused, and those refusals would read exactly like narescue.com turning
+them down. `stage_supplier_cart` refuses the same combination itself, so
+it cannot happen through the scheduler either.
+
+`--live-data` exists because `--fixtures ''` is not portable: PowerShell
+hands `--fixtures=''` over with the quotes still attached, so the empty
+value arrives as a folder literally named `''`. Both commands now treat a
+value that is empty once quotes come off as "live", and both take
+`--live-data`, which needs no quoting at all.
 
 ## Dry run is the default
 

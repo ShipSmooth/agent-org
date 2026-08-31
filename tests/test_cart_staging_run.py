@@ -26,7 +26,7 @@ from agent_org.audit.log import AuditLog
 from agent_org.broker.executors.supplier_cart import ACTION_STAGE_CART, CartStager
 from agent_org.config.models import Capability, LoadedConfig
 from agent_org.db.connection import entity_session
-from agent_org.integrations.carts import Cart, CartLine, CartUnavailable
+from agent_org.integrations.carts import Cart, CartLine, CartRefusal, CartUnavailable
 from agent_org.notify.email import RecordingSender
 from agent_org.runtime.staging import (
     SHANNON_CART_STAGING,
@@ -420,3 +420,26 @@ def test_nothing_anywhere_registers_a_way_to_buy(golden_config: LoadedConfig) ->
     assert ACTION_STAGE_CART in golden_config.policy.rules, (
         "live staging must be a named, tiered action rather than an unlisted default"
     )
+
+
+def test_a_live_run_handed_a_saved_cart_refuses_rather_than_rehearsing(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    """A saved cart refusing a line must never read like narescue.com did."""
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        with pytest.raises(CartRefusal, match="saved copy of the cart"):
+            stage_supplier_cart(
+                conn=conn,
+                config=golden_config,
+                supplier="nar",
+                output_dir=tmp_path,
+                fixtures=DATA,
+                dry_run=False,
+                week=WEEK,
+                now=MONDAY,
+            )
+        assert _staged_rows(conn, entity_id) == []

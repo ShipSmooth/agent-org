@@ -157,6 +157,19 @@ def stage_supplier_cart(
     is delivered separately: a mail server having a bad minute must not
     make a staged cart look unstaged.
     """
+    supplier_cart = cart or nar_cart(fixtures, config)
+    if not dry_run and isinstance(supplier_cart, NarFixtureCart):
+        # Before the task is claimed: a live run that reads a saved cart
+        # would report every line as refused, and those refusals would read
+        # exactly like narescue.com turning them down.
+        raise CartRefusal(
+            "A live run puts lines in the real cart, and this one was given the "
+            f"saved copy of the cart in '{supplier_cart.fixture_dir}' to read "
+            "instead. Nothing was read and nothing was staged. Add --live-data "
+            "to read the real cart, or drop --live to rehearse against the "
+            "saved copy."
+        )
+
     moment = now or datetime.now(tz=UTC)
     entity_id = config.entity_id
     replenishment_slot = (
@@ -182,7 +195,6 @@ def stage_supplier_cart(
             "right now, or this week has used its attempts. Nothing was staged."
         )
 
-    supplier_cart = cart or nar_cart(fixtures, config)
     stager = CartStager(
         conn=conn,
         entity_id=entity_id,

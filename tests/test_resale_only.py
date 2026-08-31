@@ -1,6 +1,6 @@
 """Products Zach buys complete and resells as they come.
 
-Forty-two of them: NAR finished kits and NAR components he resells
+Forty-eight of them: NAR finished kits and NAR components he resells
 unchanged. They are components because he buys them, but they are never
 inside anything, so belonging to no kit is their normal state rather than
 a missing kit line. Everything here is that one distinction, tested from
@@ -50,12 +50,13 @@ def real_findings() -> list[str]:
     return _findings(REAL_CONFIG)
 
 
-def test_the_forty_two_resale_products_are_in_the_bom(config: LoadedConfig) -> None:
+def test_the_resale_products_are_in_the_bom(config: LoadedConfig) -> None:
     resale = [key for key, item in config.boms.components.items() if item.resale_only]
-    # The 42 supplied here, plus the blue training tourniquet 30-0033, which
-    # has always been resold standalone and is now marked as what it is.
-    assert len(resale) == 43
-    assert len(config.boms.components) == 84
+    # The 42 originally supplied, plus the blue training tourniquet 30-0033,
+    # which has always been resold standalone and is now marked as what it is,
+    # plus the five off Zach's weekly list added on 30 Aug 2026.
+    assert len(resale) == 48
+    assert len(config.boms.components) == 89
     assert len(config.boms.kits) == 12
     # A sample of the SKUs Zach's existing weekly NAR procedure covers.
     for part in ("80-0167", "80-0439", "85-0834", "20-0040"):
@@ -63,6 +64,57 @@ def test_the_forty_two_resale_products_are_in_the_bom(config: LoadedConfig) -> N
         assert component.resale_only
         assert component.component_class is ComponentClass.FORECAST
         assert component.units_per_purchase_unit == 1
+
+
+# Zach's working weekly NAR reorder list, which lived only in his head and in
+# the operational Knowledge note. Seven of these were missing from the BOM
+# entirely on 30 Aug 2026, so Shannon could never have ordered them and said
+# nothing about it — a silent gap is the worst kind. Two of the seven turned
+# out to be parts he does not buy, and are recorded as that decision.
+ZACHS_WEEKLY_NAR_LIST = (
+    "80-0494",
+    "80-1034",
+    "80-1667",
+    "80-1703",
+    "80-0107",
+    "80-0027",
+    "80-0542",
+    "85-0417",
+    "80-1612",
+    "80-0947",
+    "80-0465",
+    "82-0075",
+    "80-1049",
+    "85-0008",
+    "80-0439",
+    "80-1067",
+    "80-0901",
+    "20-0040",
+    "85-0177",
+    "80-1490",
+    "85-0180",
+    "80-0573",
+    "85-0834",
+    "80-0167",
+    "80-0452",
+    "85-0404",
+)
+NOT_BOUGHT = ("80-0107", "80-0027")
+
+
+def test_every_sku_on_zachs_weekly_nar_list_is_accounted_for(config: LoadedConfig) -> None:
+    """Either Shannon can order it, or the file says why she does not."""
+    boms = REAL_CONFIG / "ithrive" / "boms.yaml"
+    text = boms.read_text(encoding="utf-8")
+    for part in ZACHS_WEEKLY_NAR_LIST:
+        if part in NOT_BOUGHT:
+            assert ComponentKey("nar", part) not in config.boms.components, part
+            assert f"#   {part}" in text, f"{part} is not bought, and nothing says so"
+            continue
+        component = config.boms.components[ComponentKey("nar", part)]
+        assert component.resale_only, part
+        assert component.component_class is ComponentClass.FORECAST, part
+        assert component.units_per_purchase_unit == 1, part
 
 
 def test_no_minimum_is_invented_for_them(config: LoadedConfig) -> None:

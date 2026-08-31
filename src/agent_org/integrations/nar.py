@@ -99,6 +99,25 @@ def credentials(credentials_prefix: str = "") -> tuple[str, str]:
     return email, password
 
 
+SEARCH_QUERY = """
+query ($sku: String!) {
+  products(search: $sku) {
+    items {
+      sku
+      name
+      __typename
+      ... on ConfigurableProduct {
+        configurable_options { attribute_id attribute_code label }
+        variants {
+          product { sku name }
+          attributes { code value_index }
+        }
+      }
+    }
+  }
+}
+"""
+
 VARIANT_QUERY = """
 query ($sku: String!) {
   products(filter: {sku: {eq: $sku}}) {
@@ -195,7 +214,7 @@ class NarCatalogue:
     transport: httpx.BaseTransport | None = field(default=None, compare=False)
 
     def resolve(self, sku: str) -> CartItem:
-        product = self._match(sku, self._products(sku))
+        product = self._find(sku)
         typename = str(product.get("__typename", ""))
         if typename != "ConfigurableProduct":
             return CartItem(sku=sku, expect_sku=sku, name=str(product.get("name", "")))
@@ -245,8 +264,39 @@ class NarCatalogue:
             "in the cart by hand."
         )
 
+    def _find(self, sku: str) -> dict[str, Any]:
+        """The product that is this SKU, asked for two ways.
+
+        The SKU filter is the precise question, but it does not always
+        answer: 82-0075 is a real part Zach buys and the filter returns
+        nothing for it, because the catalogue holds it as a child of
+        82-0075-c. A search finds it. So the filter is tried first and the
+        search is the fallback, and the same exact-match check is applied
+        to both — a search is a wider net, never a looser standard.
+        """
+        items = self._products(VARIANT_QUERY, sku)
+        product = self._match(sku, items)
+        if product is not None:
+            return product
+        wider = self._products(SEARCH_QUERY, sku)
+        product = self._match(sku, wider)
+        if product is not None:
+            return product
+        offered = self._skus(items + wider)
+        if offered == "nothing":
+            raise CartRefusal(
+                f"The narescue.com catalogue has no product with SKU {sku}, by filter "
+                "or by search. Nothing was added — a SKU the site does not know is a "
+                "parts-list error, not a cart to guess at."
+            )
+        raise CartRefusal(
+            f"The narescue.com catalogue has no product with SKU {sku}. It offered "
+            f"{offered}, which are other products that mention it rather than the "
+            "part itself. Nothing was added — check the part number."
+        )
+
     @staticmethod
-    def _match(sku: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+    def _match(sku: str, items: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The one product that is this SKU, out of everything that came back.
 
         A SKU filter on narescue.com is not the exact lookup its name
@@ -265,16 +315,12 @@ class NarCatalogue:
             variants = item.get("variants") or []
             if any(str((v.get("product") or {}).get("sku", "")) == sku for v in variants):
                 return item
-        raise CartRefusal(
-            f"The narescue.com catalogue has no product with SKU {sku}. It offered "
-            f"{NarCatalogue._skus(items)}, which are other products that mention it "
-            "rather than the part itself. Nothing was added — check the part number."
-        )
+        return None
 
     @staticmethod
     def _skus(items: list[dict[str, Any]]) -> str:
-        skus = [str(item.get("sku", "")) for item in items]
-        return ", ".join(sku for sku in skus if sku) or "nothing"
+        seen = dict.fromkeys(str(item.get("sku", "")) for item in items)
+        return ", ".join(sku for sku in seen if sku) or "nothing"
 
     @staticmethod
     def _variant_name(product: dict[str, Any], sku: str) -> str:
@@ -292,7 +338,7 @@ class NarCatalogue:
         ]
         return ", ".join(sku for sku in skus if sku) or "none listed"
 
-    def _products(self, sku: str) -> list[dict[str, Any]]:
+    def _products(self, query: str, sku: str) -> list[dict[str, Any]]:
         refuse_unless_safe("POST", GRAPHQL_PATH)
         with httpx.Client(
             base_url=self.base_url,
@@ -303,7 +349,7 @@ class NarCatalogue:
             try:
                 response = client.post(
                     GRAPHQL_PATH,
-                    json={"query": VARIANT_QUERY, "variables": {"sku": sku}},
+                    json={"query": query, "variables": {"sku": sku}},
                     headers={"Accept": "application/json"},
                 )
             except httpx.HTTPError as exc:
@@ -324,12 +370,6 @@ class NarCatalogue:
                 "not JSON. Nothing was added."
             ) from exc
         items = (((body or {}).get("data") or {}).get("products") or {}).get("items") or []
-        if not items:
-            raise CartRefusal(
-                f"The narescue.com catalogue has no product with SKU {sku}. Nothing was "
-                "added — a SKU the site does not know is a parts-list error, not a cart "
-                "to guess at."
-            )
         return [dict(item) for item in items if isinstance(item, dict)]
 
 

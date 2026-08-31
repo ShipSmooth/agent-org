@@ -31,7 +31,7 @@ real purchase orders.
 
 | Type | Example | Reorder math |
 |---|---|---|
-| **NAR finished kits** — bought complete from NAR, resold (mostly FBM, some FBA) | NAR Bleeding Control Kit | Forecast directly as a purchasable SKU. **No explosion.** Carried in `boms.yaml` as a `forecast` component with `resale_only: true` (§2.1.2) — 42 of them as of `bom_version: 2026-08-25`. |
+| **NAR finished kits** — bought complete from NAR, resold (mostly FBM, some FBA) | NAR Bleeding Control Kit | Forecast directly as a purchasable SKU. **No explosion.** Carried in `boms.yaml` as a `forecast` component with `resale_only: true` (§2.1.2) — 48 of them as of `bom_version: 2026-08-26`. |
 | **HMZ kits** — assembled in-house from components | Seven kits: Essential (Mobile 20-314, Wall Mounted 20-315), Express 25-001, Basic C-A-T 25-010, Basic C-A-T Red Bag 26-001, Basic SAM XT 26-002, IFAK with CAT Gen 7 & HyFin (4 colourways: IFAK-CAT-BLACK/-GREEN/-COYOTE/-MULTICAM), Compact IFAK Trauma Kit IFAK-CAT-COMPACT (black only; different carrier from the full IFAK) | **Never purchased.** Demand is exploded through the BOM into component demand (§2). The kit itself gets a *build* recommendation, not a purchase. |
 | **NAR components sold standalone** (mostly FBA, some FBM) | 30-0001 CAT Black, 10-0042 HyFin Vent Compact Twin | Forecast directly as a purchasable SKU. No explosion. A single physical component may receive demand from **both** standalone sales and kit explosion; the two are summed (§3). |
 
@@ -128,7 +128,7 @@ Rules:
 
 ### 2.1.2 `resale_only` — a product that is bought, not made
 
-The 42 NAR finished kits and NAR standalone components Zach resells as
+The 48 NAR finished kits and NAR standalone components Zach resells as
 they come are components in this file, because he buys them, but they are
 never *inside* anything. `resale_only: true` says exactly that:
 
@@ -791,6 +791,11 @@ Facts adopted:
   Springfield VA 22150.
 - **Known SKU correction:** 85-0439 does not exist in the NAR catalog;
   the correct part is **80-0439** (K-9 Handler IFAK Kit, Black).
+- **The whole of that weekly list is in `boms.yaml`**, checked by a test
+  that names all 25 part numbers. Seven were missing until 30 Aug 2026, so
+  Shannon could not have ordered them and said nothing about it. Two of the
+  seven — 80-0107 and 80-0027 — Zach does not buy, and the file records
+  that as a decision rather than leaving them out.
 - **Never skip a week for being too small** — stage whatever the math
   produces. Skip only SKUs with zero sales in the window, flagged (zero
   sales + no sales price in Veeqo usually means a mis-mapped listing, not

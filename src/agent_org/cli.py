@@ -47,6 +47,20 @@ from agent_org.tenancy.registry import register_entity
 EXIT_OK = 0
 EXIT_PROBLEM = 1
 
+SAVED_DATA = "tests/fixtures/golden/data"
+
+
+def _saved_data(value: str | None) -> Path | None:
+    """The folder of saved data to read, or None for the live account.
+
+    PowerShell hands `--fixtures=''` to the program with the quotes still
+    attached, so an operator asking for live data can end up asking for a
+    folder literally named `''`. A value that is empty once quotes and
+    spaces come off means live, whichever shell it was typed in.
+    """
+    text = (value or "").strip().strip("'\"").strip()
+    return Path(text) if text else None
+
 
 def _load(args: argparse.Namespace) -> LoadedConfig:
     return load_config(Path(args.config_root), args.entity)[0]
@@ -157,9 +171,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(str(exc))
         return EXIT_PROBLEM
 
-    # --fixtures "" means the live Veeqo account and the live mailbox. Both
-    # are read-only, and both take their credentials from the environment.
-    fixtures = Path(args.fixtures) if args.fixtures else None
+    # --fixtures "" (or --live-data) means the live Veeqo account and the
+    # live mailbox. Both are read-only, and both take their credentials
+    # from the environment.
+    fixtures = None if args.live_data else _saved_data(args.fixtures)
     try:
         with connect(settings.app_dsn) as conn:
             with entity_session(conn, config.entity_id) as scoped:
@@ -289,6 +304,24 @@ def cmd_stage(args: argparse.Namespace) -> int:
     cart, which is why a wrong number is fixed with `shannon run --again`
     and never here.
     """
+    dry_run = not args.live
+    fixtures = None if args.live_data else _saved_data(args.fixtures)
+    if args.live and fixtures is not None:
+        # Reading a saved cart and calling it a live run is the one outcome
+        # that could make "nothing was added" look like narescue.com saying
+        # no, so it never happens quietly: the default saved folder is
+        # dropped and anything asked for by name is refused outright.
+        if args.fixtures != SAVED_DATA:
+            print(
+                f"--live adds lines to the real cart, but --fixtures '{fixtures}' "
+                "points at a saved copy of one. Nothing was read and nothing was "
+                "staged. Add --live-data to use the real site, or drop --live to "
+                "rehearse against the saved copy."
+            )
+            return EXIT_PROBLEM
+        print("--live reads and writes the real cart on the supplier's site.")
+        fixtures = None
+
     config = _load(args)
     try:
         settings = DatabaseSettings.from_env()
@@ -296,8 +329,6 @@ def cmd_stage(args: argparse.Namespace) -> int:
         print(str(exc))
         return EXIT_PROBLEM
 
-    dry_run = not args.live
-    fixtures = Path(args.fixtures) if args.fixtures else None
     try:
         with connect(settings.app_dsn) as conn:
             with entity_session(conn, config.entity_id) as scoped:
@@ -438,11 +469,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_cmd.add_argument(
         "--fixtures",
-        default="tests/fixtures/golden/data",
+        default=SAVED_DATA,
         help=(
             "folder of saved Veeqo/Gmail exports to read instead of the live "
-            "accounts. Pass an empty value (--fixtures '') to read the live Veeqo "
-            "account and the live mailbox, both read-only"
+            "accounts. Use --live-data to read the live Veeqo account and the "
+            "live mailbox instead, both read-only"
+        ),
+    )
+    run_cmd.add_argument(
+        "--live-data",
+        action="store_true",
+        help=(
+            "read the live Veeqo account and the live mailbox rather than any "
+            "saved export, whatever --fixtures says. Both reads are read-only"
         ),
     )
     run_cmd.add_argument("--output", default="reports", help="folder to write the report file into")
@@ -511,11 +550,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     stage_cmd.add_argument(
         "--fixtures",
-        default="tests/fixtures/golden/data",
+        default=SAVED_DATA,
         help=(
             "folder holding a saved copy of the cart to read instead of the live "
-            "site. Pass an empty value (--fixtures '') to read the real cart, "
-            "which needs the supplier login in the environment"
+            "site. Use --live-data to read the real cart, which needs the "
+            "supplier login in the environment"
+        ),
+    )
+    stage_cmd.add_argument(
+        "--live-data",
+        action="store_true",
+        help=(
+            "read the real cart on the supplier's site rather than a saved copy, "
+            "whatever --fixtures says. Reading is all this does on its own; "
+            "adding lines still needs --live"
         ),
     )
     stage_cmd.add_argument(

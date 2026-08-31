@@ -149,8 +149,15 @@ def stage_supplier_cart(
     week: str | None = None,
     now: datetime | None = None,
     cart: SupplierCart | None = None,
+    again: bool = False,
 ) -> StagingSummary:
     """Stage — or rehearse staging — one supplier's cart for one week.
+
+    `again` is `shannon stage --again`: a week whose attempts went on runs
+    that never reached the cart is asked for one more. It cannot stage a
+    line twice — `cart_stagings` already holds every SKU this week put in
+    this cart, and a line recorded there is skipped, because a cart line
+    cannot be taken back out.
 
     Nothing is emailed here; delivery is `deliver_staging_report`, after
     this transaction has committed, for the same reason the weekly report
@@ -189,10 +196,24 @@ def stage_supplier_cart(
         schedule_slot=slot,
         states=(TaskState.QUEUED, TaskState.FAILED, TaskState.SUCCEEDED),
     )
+    if task is None and again:
+        reopened = queue.reopen(
+            SHANNON_CART_STAGING,
+            slot,
+            "`shannon stage --again`: staging attempted again on request.",
+        )
+        task = (
+            queue.claim((SHANNON_CART_STAGING,), schedule_slot=slot)
+            if reopened is not None
+            else None
+        )
     if task is None:
         raise NothingToStage(
             f"A staging run for {slot} could not be claimed — one may be running "
-            "right now, or this week has used its attempts. Nothing was staged."
+            "right now, or this week has used its attempts. Nothing was staged. "
+            "If the earlier attempts went on runs that never reached the cart, "
+            "`shannon stage --again` asks for another; anything already in the "
+            "cart for this week stays put and is not added twice."
         )
 
     stager = CartStager(
@@ -213,7 +234,12 @@ def stage_supplier_cart(
         registry=registry,
         audit=audit,
         suppliers=config.boms.suppliers,
+        # Staging keeps its own line-by-line ledger, so a second attempt at
+        # the week is allowed to reach the executor: what is already in the
+        # cart is skipped there, by SKU, and cannot be added twice.
+        ledgered_actions=frozenset({ACTION_STAGE_CART}),
     )
+    attempt_salt = f"attempt-{task.attempts}" if task.attempts > 1 else ""
 
     summary = StagingSummary(supplier=supplier, week=week_name, plan=plan, dry_run=dry_run)
     try:
@@ -247,6 +273,7 @@ def stage_supplier_cart(
                 line_quantities=tuple(line.quantity for line in plan.lines),
             ),
             history=None if dry_run else staging_history(conn, entity_id, supplier),
+            attempt_salt=attempt_salt,
         )
     except (BrokerRefusal, CartUnavailable, CartRefusal) as exc:
         queue.fail(task, str(exc))

@@ -67,6 +67,7 @@ class ActionBroker:
         registry: ExecutorRegistry,
         audit: AuditLog,
         suppliers: dict[str, Supplier] | None = None,
+        ledgered_actions: frozenset[str] = frozenset(),
     ) -> None:
         self.conn = conn
         self.entity_id = entity_id
@@ -74,6 +75,7 @@ class ActionBroker:
         self.registry = registry
         self.audit = audit
         self.suppliers = suppliers or {}
+        self.ledgered_actions = ledgered_actions
 
     def submit(
         self,
@@ -212,8 +214,17 @@ class ActionBroker:
         dropped there and the fingerprint stays exactly what it was. The rule
         lives at the doorway rather than in the caller, because the caller is
         the thing most likely to be wrong.
+
+        The exception is an action in `ledgered_actions`, which records each
+        of its effects one by one as it makes them and skips any it finds
+        already recorded. Cart staging is the only one: `cart_stagings`
+        holds every SKU already put in this week's cart, under a unique key,
+        so a repeat cannot add a line twice however often it is asked. For
+        those, the fingerprint is the weaker guard, and it is the guard that
+        would otherwise make a run which staged *nothing* — refused, or
+        stopped before it reached the site — unrepeatable for the week.
         """
-        if not attempt_salt or tier <= 0:
+        if not attempt_salt or tier <= 0 or action_type in self.ledgered_actions:
             return attempt_salt
         ignored = self.audit.intent(
             "proposal.fingerprint",

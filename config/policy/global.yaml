@@ -26,6 +26,29 @@ thresholds:
 # this is a deliberate act, and it has not been taken.
 max_tier_this_phase: 0
 
+# phase_exceptions: one action, by name, allowed above that ceiling and no
+# further than the tier written beside it. It exists so that switching on
+# live cart staging for one supplier does not also switch on sending SMS,
+# updating Shopify or creating an FBA inbound plan, which is what raising
+# `max_tier_this_phase` to 2 would do.
+#
+# To let Shannon put lines in the real narescue.com cart — and only that —
+# uncomment these two lines:
+#
+#   - action: nar.stage_cart
+#     up_to_tier: 2
+#
+# `up_to_tier: 2` leaves the anomaly escalations in force: a week that
+# escalates to Tier 3 (a line more than twice its trailing average, or too
+# little history to call anything normal) is still refused, which is the
+# intended answer for a first live run. `up_to_tier: 3` accepts those too,
+# and is the deliberate way to say "stage this week's cart anyway".
+#
+# Neither value can buy anything. No supplier holds the `purchase`
+# capability, the cart interface has no checkout method, and the client
+# refuses checkout, order and payment paths outright.
+phase_exceptions: []
+
 rules:
   # ---- Tier 0: silent reads and internal work ----
   - action: veeqo.read_inventory

@@ -9,6 +9,12 @@ Phase 1 sets `max_tier_this_phase: 0` in `config/policy/global.yaml`.
 Anything above Tier 0 is refused here, at the doorway, whatever the rest of
 the system thinks it wants. Raising that number is the deliberate act that
 opens the next phase; nothing else in this file changes.
+
+One action can be let above that ceiling on its own, by name, in
+`phase_exceptions` — how live cart staging for one supplier is switched on
+without also switching on every other Tier 2 action. The exception names
+the tier it reaches, so an anomalous week that escalates past it is still
+refused.
 """
 
 from __future__ import annotations
@@ -107,10 +113,16 @@ class ActionBroker:
         ctx = context or ActionContext(reversible=executor.reversible, category=executor.category)
         decision = self.policy.resolve(action_type, ctx, history)
 
-        if decision.tier > self.policy.max_tier_this_phase:
+        ceiling = self.policy.ceiling_for(action_type)
+        if decision.tier > ceiling:
+            if ceiling > self.policy.max_tier_this_phase:
+                allowed = f"'{action_type}' is allowed to tier {ceiling} by a phase exception"
+            elif ceiling == 0:
+                allowed = "this phase is read-only (tier 0)"
+            else:
+                allowed = f"this phase allows tier {ceiling} only"
             reason = (
-                f"'{action_type}' is tier {decision.tier}. This phase is read-only and "
-                f"allows tier {self.policy.max_tier_this_phase} only "
+                f"'{action_type}' is tier {decision.tier}, and {allowed} "
                 f"({'; '.join(decision.reasons)})."
             )
             self.audit.outcome(

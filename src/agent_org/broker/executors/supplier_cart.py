@@ -95,16 +95,42 @@ class CartStager:
             results.append(self._one_line(task_id, slot, line, already, before))
 
         after = before if self.dry_run else self.cart.read_cart()
+        if not self.dry_run:
+            self._verify(results, before, after)
         return {
             "supplier": self.supplier,
             "mode": self.mode,
             "cart_before": _cart_as_dict(before),
             "cart_after": _cart_as_dict(after),
             "lines": results,
+            "kept": _kept(before, after),
             "submitted": False,
             "paid": False,
             "ordered": False,
         }
+
+    def _verify(self, results: list[dict[str, Any]], before: Cart, after: Cart) -> None:
+        """Check the cart itself, not the replies that said it worked.
+
+        Magento answering 200 for an add is Magento's account of the cart.
+        This is the cart. Every line that claims to have been added has to
+        show up as a real increase in what the cart holds, or it is
+        reported as unverified — the confirmation email is worth nothing if
+        it says "added" about a line Zach will not find.
+        """
+        for result in results:
+            if result["status"] != STATUS_ADDED:
+                continue
+            sku = str(result.get("staged_sku") or result["sku"])
+            expected = before.quantity_of(sku) + int(result["quantity"])
+            found = after.quantity_of(sku)
+            result["verified"] = found == expected
+            if found != expected:
+                result["detail"] = (
+                    f"added as {sku} × {result['quantity']}, but the cart afterwards "
+                    f"holds {found} of it where {expected} was expected. Check the "
+                    "cart on the site before ordering anything."
+                )
 
     def _one_line(
         self,
@@ -202,6 +228,22 @@ class CartStager:
                 error,
             ),
         )
+
+
+def _kept(before: Cart, after: Cart) -> dict[str, Any]:
+    """Did everything Zach already had in the cart survive the run?
+
+    Shannon cannot remove a line — there is no method for it — so this can
+    only fail if the site did something of its own. It is reported anyway,
+    because "your cart is as you left it, plus these" is the sentence the
+    confirmation email is really making.
+    """
+    lost = [
+        {"sku": line.sku, "was": line.quantity, "now": after.quantity_of(line.sku)}
+        for line in before.lines
+        if after.quantity_of(line.sku) < line.quantity
+    ]
+    return {"all_kept": not lost, "lost": lost}
 
 
 def plan_cart_staging_executor(stager: CartStager) -> Executor:

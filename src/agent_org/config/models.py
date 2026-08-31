@@ -362,6 +362,10 @@ class PolicyConfig:
     # rule this excuses — irreversible means Tier 3 — is the right default
     # and stays in force for everything not listed here.
     accepted_irreversible: tuple[str, ...] = field(default_factory=tuple)
+    # One named action allowed above the phase ceiling, up to one named
+    # tier. This is how a single supplier's cart staging is switched on
+    # without opening every Tier 2 action in the rulebook at the same time.
+    phase_exceptions: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

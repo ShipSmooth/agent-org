@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -16,20 +17,71 @@ import pytest
 from agent_org.integrations.carts import CartRefusal, CartUnavailable
 from agent_org.integrations.nar import (
     CART_PATH,
+    GRAPHQL_PATH,
     ITEMS_PATH,
     TOTALS_PATH,
     NarCartClient,
+    NarCatalogue,
     NarFixtureCart,
 )
 
 TOKEN = "not-a-real-token"
 
+# The IPOK exactly as narescue.com's own GraphQL described it when Zach ran
+# the spike against his account: one configurable parent, three hemostatic
+# options, three real child SKUs at three very different prices.
+IPOK: dict[str, Any] = {
+    "sku": "80-0168-s",
+    "name": "Individual Patrol Officer Kit (IPOK)",
+    "__typename": "ConfigurableProduct",
+    "configurable_options": [
+        {"attribute_id": "196", "attribute_code": "hemostatic_agent", "label": "Hemostatic Agent"}
+    ],
+    "variants": [
+        {
+            "product": {"sku": "80-0167", "name": "IPOK — Gauze (no Hemostatic)"},
+            "attributes": [{"code": "hemostatic_agent", "value_index": 149}],
+        },
+        {
+            "product": {"sku": "80-0168", "name": "IPOK — Combat Gauze"},
+            "attributes": [{"code": "hemostatic_agent", "value_index": 146}],
+        },
+        {
+            "product": {"sku": "80-1787", "name": "IPOK — Celox Rapid"},
+            "attributes": [{"code": "hemostatic_agent", "value_index": 897}],
+        },
+    ],
+}
+TOURNIQUET: dict[str, Any] = {
+    "sku": "30-0002",
+    "name": "C-A-T Tourniquet GEN 7",
+    "__typename": "SimpleProduct",
+}
 
-def _transport(seen: list[httpx.Request] | None = None) -> httpx.MockTransport:
+
+def _catalogue_response(request: httpx.Request, products: list[dict[str, Any]]) -> httpx.Response:
+    asked = json.loads(request.content)["variables"]["sku"]
+    found = [
+        product
+        for product in products
+        if asked == product["sku"]
+        or any(asked == variant["product"]["sku"] for variant in product.get("variants", []))
+    ]
+    return httpx.Response(200, json={"data": {"products": {"items": found}}})
+
+
+def _transport(
+    seen: list[httpx.Request] | None = None,
+    products: list[dict[str, Any]] | None = None,
+) -> httpx.MockTransport:
+    catalogue = products if products is not None else [IPOK, TOURNIQUET]
+
     def handle(request: httpx.Request) -> httpx.Response:
         if seen is not None:
             seen.append(request)
         path = request.url.path
+        if path == GRAPHQL_PATH:
+            return _catalogue_response(request, catalogue)
         if path.endswith("/customer/token"):
             return httpx.Response(200, json=TOKEN)
         if path == CART_PATH:
@@ -44,19 +96,39 @@ def _transport(seen: list[httpx.Request] | None = None) -> httpx.MockTransport:
             return httpx.Response(200, json={"grand_total": 111.96, "quote_currency_code": "USD"})
         if path == ITEMS_PATH:
             body = json.loads(request.content)["cartItem"]
+            # Magento answers with the child SKU the chosen option resolves
+            # to, which is why the reply is worth checking at all.
+            option = _chosen_option(body)
+            sku = _child_for(option) if option is not None else body["sku"]
             return httpx.Response(
                 200,
                 json={
                     "item_id": 12,
-                    "sku": body["sku"],
+                    "sku": sku,
                     "name": "IPOK",
                     "qty": body["qty"],
-                    "price": 57.99,
+                    "price": 38.97,
                 },
             )
         raise AssertionError(f"unexpected path {path}")
 
     return httpx.MockTransport(handle)
+
+
+def _chosen_option(cart_item: dict[str, Any]) -> int | None:
+    options = (
+        (cart_item.get("product_option") or {})
+        .get("extension_attributes", {})
+        .get("configurable_item_options", [])
+    )
+    return int(options[0]["option_value"]) if options else None
+
+
+def _child_for(value_index: int) -> str:
+    for variant in IPOK["variants"]:
+        if variant["attributes"][0]["value_index"] == value_index:
+            return str(variant["product"]["sku"])
+    raise AssertionError(f"no variant for {value_index}")
 
 
 def _client(**kwargs: object) -> NarCartClient:
@@ -83,6 +155,109 @@ def test_adds_a_line_and_reports_what_the_cart_says(login: None) -> None:
     assert (line.sku, line.quantity) == ("80-0167", 3)
 
 
+def test_a_configurable_goes_in_as_its_parent_and_the_option_that_selects_it(
+    login: None,
+) -> None:
+    """The case Zach flagged: 80-0167 is a variant, not a product to post."""
+    seen: list[httpx.Request] = []
+    NarCartClient(transport=_transport(seen)).add_line("80-0167", 2)
+    posted = [request for request in seen if request.url.path == ITEMS_PATH]
+    item = json.loads(posted[0].content)["cartItem"]
+    assert item["sku"] == "80-0168-s"
+    assert item["product_option"]["extension_attributes"]["configurable_item_options"] == [
+        {"option_id": "196", "option_value": 149}
+    ]
+
+
+def test_a_simple_product_goes_in_as_itself(login: None) -> None:
+    seen: list[httpx.Request] = []
+    line = NarCartClient(transport=_transport(seen)).add_line("30-0002", 5)
+    posted = next(request for request in seen if request.url.path == ITEMS_PATH)
+    item = json.loads(posted.content)["cartItem"]
+    assert item["sku"] == "30-0002"
+    assert "product_option" not in item
+    assert line.quantity == 5
+
+
+def test_a_parent_sku_is_refused_rather_than_guessed_at(login: None) -> None:
+    """'Add the IPOK' does not say which hemostatic agent, so nothing is added."""
+    with pytest.raises(CartRefusal, match="does not say what to add"):
+        _client().add_line("80-0168-s", 1)
+
+
+def test_a_sku_the_catalogue_does_not_know_is_refused(login: None) -> None:
+    with pytest.raises(CartRefusal, match="no product with SKU 80-9999"):
+        _client().add_line("80-9999", 1)
+
+
+def test_an_unreadable_catalogue_stages_nothing(login: None) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == GRAPHQL_PATH:
+            return httpx.Response(503, text="down")
+        return httpx.Response(200, json=TOKEN)
+
+    with pytest.raises(CartUnavailable, match="Nothing was added"):
+        NarCartClient(transport=httpx.MockTransport(handle)).add_line("80-0167", 1)
+
+
+def test_a_line_that_comes_back_as_a_different_product_is_a_failure(login: None) -> None:
+    """A cart holding the $110.99 variant instead of the $57.99 one is not success."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == GRAPHQL_PATH:
+            return _catalogue_response(request, [IPOK])
+        if request.url.path.endswith("/customer/token"):
+            return httpx.Response(200, json=TOKEN)
+        if request.url.path == CART_PATH:
+            return httpx.Response(200, json={"id": 4711, "items": []})
+        return httpx.Response(200, json={"sku": "80-0168", "qty": 1, "name": "IPOK"})
+
+    with pytest.raises(CartUnavailable, match="replied with 80-0168"):
+        NarCartClient(transport=httpx.MockTransport(handle)).add_line("80-0167", 1)
+
+
+def test_a_line_that_lands_at_the_wrong_quantity_is_a_failure(login: None) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == GRAPHQL_PATH:
+            return _catalogue_response(request, [TOURNIQUET])
+        if request.url.path.endswith("/customer/token"):
+            return httpx.Response(200, json=TOKEN)
+        if request.url.path == CART_PATH:
+            return httpx.Response(200, json={"id": 4711, "items": []})
+        return httpx.Response(200, json={"sku": "30-0002", "qty": 1, "name": "C-A-T"})
+
+    with pytest.raises(CartUnavailable, match="put 1 in"):
+        NarCartClient(transport=httpx.MockTransport(handle)).add_line("30-0002", 40)
+
+
+def test_a_variant_the_catalogue_cannot_explain_is_refused() -> None:
+    """The parent lists the child but never says which option picks it."""
+    unexplained = dict(IPOK, configurable_options=[])
+    catalogue = NarCatalogue(transport=_transport(products=[unexplained]))
+    with pytest.raises(CartRefusal, match="does not say which 'hemostatic_agent' selects it"):
+        catalogue.resolve("80-0167")
+
+
+def test_a_child_the_parent_does_not_list_is_refused() -> None:
+    """GraphQL answered, but with a product this SKU is not a variant of."""
+    variants = [v for v in IPOK["variants"] if v["product"]["sku"] != "80-0167"]
+    answer = {"data": {"products": {"items": [dict(IPOK, variants=variants)]}}}
+    catalogue = NarCatalogue(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=answer))
+    )
+    with pytest.raises(CartRefusal, match="not one of 80-0168-s's variants"):
+        catalogue.resolve("80-0167")
+
+
+def test_the_catalogue_resolves_the_variant_zach_actually_buys() -> None:
+    item = NarCatalogue(transport=_transport()).resolve("80-0167")
+    assert (item.sku, item.expect_sku, item.options) == (
+        "80-0168-s",
+        "80-0167",
+        (("196", 149),),
+    )
+
+
 def test_refuses_the_path_that_places_an_order(login: None) -> None:
     client = _client()
     with pytest.raises(CartRefusal, match="checkout, order or payment"):
@@ -104,7 +279,7 @@ def test_refuses_every_checkout_shaped_path(login: None, path: str) -> None:
 
 
 def test_refuses_a_path_that_is_merely_unlisted(login: None) -> None:
-    with pytest.raises(CartRefusal, match="not one of the four paths"):
+    with pytest.raises(CartRefusal, match="not one of the paths"):
         _client()._request("GET", "/rest/V1/customers/me")
 
 

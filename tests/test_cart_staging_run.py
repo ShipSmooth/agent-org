@@ -36,7 +36,12 @@ from agent_org.runtime.staging import (
     stage_supplier_cart,
 )
 from agent_org.runtime.worker import run_replenishment
-from agent_org.shannon.staging_report import NOTHING_WAS_SUBMITTED
+from agent_org.shannon.staging import StagingPlan
+from agent_org.shannon.staging_report import (
+    NOTHING_WAS_SUBMITTED,
+    StagingContext,
+    render,
+)
 from agent_org.tasks.queue import TaskQueue
 
 DATA = Path(__file__).parent / "fixtures" / "golden" / "data"
@@ -234,6 +239,93 @@ def test_a_line_the_site_refuses_is_reported_and_the_rest_still_go_in(
     assert result["submitted"] is False
 
 
+@dataclass
+class ForgetfulCart(RecordingCart):
+    """A cart that says yes and then does not hold the line."""
+
+    def read_cart(self) -> Cart:
+        return Cart(
+            supplier=self.supplier,
+            cart_id="quote-1",
+            lines=(CartLine(sku="30-0002", name="C-A-T", quantity=4, price=Decimal("27.99")),),
+            grand_total=Decimal("111.96"),
+        )
+
+
+@dataclass
+class ForgetfulOfZachsCart(RecordingCart):
+    """A cart that loses what was in it before the run."""
+
+    read_count: int = 0
+
+    def read_cart(self) -> Cart:
+        self.read_count += 1
+        lines = [CartLine(sku=sku, name=sku, quantity=qty) for sku, qty in self.added]
+        if self.read_count == 1:
+            lines.insert(0, CartLine(sku="30-0002", name="C-A-T", quantity=4))
+        return Cart(supplier=self.supplier, cart_id="quote-1", lines=tuple(lines))
+
+
+def _live_stage(
+    conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    cart: RecordingCart,
+) -> dict[str, object]:
+    task_id = _a_task(conn, entity_id)
+    stager = CartStager(conn=conn, entity_id=entity_id, supplier="nar", cart=cart, dry_run=False)
+    return stager(
+        {
+            "task_id": task_id,
+            "schedule_slot": "shannon_cart_staging/nar/2026-W14",
+            "lines": [{"sku": "80-0167", "name": "IPOK", "quantity": 20, "units": 20}],
+        }
+    )
+
+
+def test_a_line_the_cart_does_not_actually_hold_afterwards_is_not_called_added(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    """A 200 from the site is the site's account of the cart, not the cart."""
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        result = _live_stage(conn, entity_id, ForgetfulCart())
+    line = result["lines"][0]  # type: ignore[index]
+    assert line["verified"] is False
+    assert "Check the cart on the site" in line["detail"]
+
+
+def test_a_verified_line_says_so(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        result = _live_stage(conn, entity_id, RecordingCart())
+    assert result["lines"][0]["verified"] is True  # type: ignore[index]
+    assert result["kept"] == {"all_kept": True, "lost": []}
+
+
+def test_a_line_of_zachs_that_vanishes_during_the_run_is_reported(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    """Shannon cannot remove a line, so if one goes, Zach has to be told."""
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        result = _live_stage(conn, entity_id, ForgetfulOfZachsCart())
+    assert result["kept"] == {
+        "all_kept": False,
+        "lost": [{"sku": "30-0002", "was": 4, "now": 0}],
+    }
+
+
 def test_live_staging_is_refused_while_the_phase_is_read_only(
     app_conn: psycopg.Connection[tuple[object, ...]],
     entity_id: str,
@@ -283,6 +375,40 @@ def test_the_confirmation_email_goes_to_the_owner_and_says_nothing_was_submitted
     assert mail.to == ("zach@ithrivemedical.com",)
     assert "dry run" in mail.subject
     assert _says(mail.body, NOTHING_WAS_SUBMITTED)
+
+
+def test_the_report_tells_zach_to_look_when_a_line_cannot_be_verified() -> None:
+    """The confirmation is worthless if it says 'added' about a line that is
+    not in the cart, so the doubt is the first thing on the page."""
+    plan = StagingPlan(supplier="nar", lines=(), skipped=())
+    result = {
+        "mode": "LIVE",
+        "lines": [
+            {
+                "sku": "80-0167",
+                "name": "IPOK",
+                "quantity": 20,
+                "status": "ADDED",
+                "verified": False,
+                "detail": "the cart afterwards holds 0 of it",
+            }
+        ],
+        "kept": {"all_kept": False, "lost": [{"sku": "30-0002", "was": 4, "now": 1}]},
+        "cart_before": {},
+        "cart_after": {},
+    }
+    body = render(
+        plan,
+        result,
+        StagingContext(
+            supplier_name="narescue.com",
+            entity_name="iThrive Medical LLC",
+            week=WEEK,
+            generated_at=MONDAY,
+        ),
+    )
+    assert _says(body, "CHECK THE CART YOURSELF: 1 line went in, but the cart afterwards")
+    assert _says(body, "the cart held 1 line before this run that it no longer holds in full")
 
 
 def test_nothing_anywhere_registers_a_way_to_buy(golden_config: LoadedConfig) -> None:

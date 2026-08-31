@@ -68,6 +68,24 @@ The list is empty today, so live staging is refused. An exception must
 name an action that already has a rule, and must say how far it goes;
 neither can be left out.
 
+## Asking for the week again
+
+A staging slot gets three attempts, the budget that stops a process
+dying mid-run from looping forever. Attempts spent on runs that never
+reached the site — refused by policy, stopped before reading the cart —
+leave the week unstageable, which is the wrong answer to "try that
+again". `shannon stage --again` raises the ceiling by one, the same way
+`shannon run --again` does for a report.
+
+Repeating a live action is normally impossible: the broker fingerprints
+each one and returns the earlier outcome instead of doing it twice.
+`nar.stage_cart` is passed to the broker as a *ledgered* action, so a
+deliberate retry reaches the executor. That is safe because the guard
+underneath is stronger than the fingerprint: `cart_stagings` holds every
+SKU this week has put in this cart, under a unique key, and the executor
+skips any line it finds there. A retry adds what is missing and nothing
+else.
+
 ## A configurable's variant comes from the catalogue, never the page
 
 80-0167 is not a product to post: it is the "Gauze (no Hemostatic)"

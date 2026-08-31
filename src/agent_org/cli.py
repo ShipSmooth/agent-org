@@ -341,6 +341,7 @@ def cmd_stage(args: argparse.Namespace) -> int:
                     dry_run=dry_run,
                     week=args.week,
                     now=datetime.now(tz=UTC),
+                    again=bool(args.again),
                 )
             conn.commit()
             if summary.error is None and not args.no_email:
@@ -564,6 +565,15 @@ def build_parser() -> argparse.ArgumentParser:
             "read the real cart on the supplier's site rather than a saved copy, "
             "whatever --fixtures says. Reading is all this does on its own; "
             "adding lines still needs --live"
+        ),
+    )
+    stage_cmd.add_argument(
+        "--again",
+        action="store_true",
+        help=(
+            "stage this week again after attempts were spent on runs that never "
+            "reached the cart. Lines already in the cart for this week are left "
+            "alone and are not added a second time"
         ),
     )
     stage_cmd.add_argument(

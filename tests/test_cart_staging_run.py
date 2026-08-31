@@ -14,7 +14,7 @@ recorder.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -75,6 +75,14 @@ class RecordingCart:
             raise CartUnavailable(f"narescue.com answered 500 for {sku}.")
         self.added.append((sku, quantity))
         return CartLine(sku=sku, name=sku, quantity=quantity)
+
+
+@dataclass
+class RefusingCart(RecordingCart):
+    """A cart that turns every line down, the way a bad run looked."""
+
+    def add_line(self, sku: str, quantity: int) -> CartLine:
+        raise CartRefusal(f"{quantity} of {sku} was not added anywhere.")
 
 
 def _week(conn: psycopg.Connection[tuple[object, ...]], config: LoadedConfig, output: Path) -> None:
@@ -443,3 +451,70 @@ def test_a_live_run_handed_a_saved_cart_refuses_rather_than_rehearsing(
                 now=MONDAY,
             )
         assert _staged_rows(conn, entity_id) == []
+
+
+def _live_allowed(config: LoadedConfig) -> LoadedConfig:
+    """Zach's own configuration: nar.stage_cart, and nothing else, above 0."""
+    policy = replace(config.policy, phase_exceptions={ACTION_STAGE_CART: 3})
+    return replace(config, policy=policy)
+
+
+def test_a_week_whose_attempts_went_on_runs_that_staged_nothing_can_be_asked_again(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    """Three live runs where the site refused every line leave the week out
+    of attempts. `--again` gets one more, and it reaches the cart."""
+    config = _live_allowed(golden_config)
+    refusing = RefusingCart()
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        for _ in range(3):
+            _stage(conn, config, tmp_path, refusing, dry_run=False)
+        with pytest.raises(NothingToStage, match="shannon stage --again"):
+            _stage(conn, config, tmp_path, RecordingCart(), dry_run=False)
+
+    working = RecordingCart()
+    with entity_session(app_conn, entity_id) as conn:
+        summary = stage_supplier_cart(
+            conn=conn,
+            config=config,
+            supplier="nar",
+            output_dir=tmp_path,
+            dry_run=False,
+            week=WEEK,
+            now=MONDAY,
+            cart=working,
+            again=True,
+        )
+    assert summary.error is None
+    assert working.added, "the retry has to reach the cart, not a swallowed duplicate"
+
+
+def test_asking_again_does_not_put_a_staged_line_in_the_cart_twice(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    config = _live_allowed(golden_config)
+    cart = RecordingCart()
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        first = _stage(conn, config, tmp_path, cart, dry_run=False)
+        added_first_time = list(cart.added)
+        again = stage_supplier_cart(
+            conn=conn,
+            config=config,
+            supplier="nar",
+            output_dir=tmp_path,
+            dry_run=False,
+            week=WEEK,
+            now=MONDAY,
+            cart=cart,
+            again=True,
+        )
+    assert first.error is None and again.error is None
+    assert cart.added == added_first_time, "a second ask must not re-add a staged line"

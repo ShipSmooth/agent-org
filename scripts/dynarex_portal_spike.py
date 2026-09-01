@@ -7,19 +7,26 @@ portal is only safe if its actual mechanics are known rather than guessed
 at. Three things have to be established before any staging code is worth
 writing:
 
-1. **Can it be reached from a machine at all?** Requesting dynarex.com
-   from this project's build machine returns Google's "Checking your
-   browser" reCAPTCHA interstitial, not the storefront. The Dell has a
-   residential address and a real browser profile, so it may never see
-   that page — but if a captcha appears on Zach's machine too, an
-   unattended Monday-morning run cannot log in, and the whole approach has
-   to change before it is built rather than after.
+1. **Can it be reached from a machine at all?** One request from this
+   project's build machine came back as Google's "Checking your browser"
+   reCAPTCHA interstitial rather than the storefront; later requests from
+   the same machine were served normally. So the challenge is occasional
+   rather than constant, which is worse than a flat refusal: an unattended
+   Monday-morning run would work most weeks and silently fail some.
 2. **What the sign-in form and the cart page actually are** — the field
    names, the URLs, and whether the cart survives a fresh login in a clean
    browser profile the way it must for an unattended run.
 3. **What a Quick Order row looks like**, since that is the mechanism the
    four Dynarex parts in boms.yaml — 3161, 3553, 3173, 3683 — would be
    staged through.
+
+The first run of this script found no sign-in form, because it guessed
+Magento's paths. The portal is commercebuild, not Magento: sign-in is
+/user/login with fields named login_username and login_password, the cart
+is /cart, Quick Order is /cart/quickorders, and search is /product_search.
+Those are read off the live site rather than guessed at now — and every
+path this script tries is printed with what was actually at it, so a miss
+names the page it landed on instead of saying "not found".
 
 This script answers all three **read-only**. It opens pages, reads the DOM,
 and prints what it found. It types into no field except the sign-in form,
@@ -50,10 +57,13 @@ from getpass import getpass
 from typing import Any
 from urllib.parse import urlparse
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
-BASE = "https://www.dynarex.com"
+# www.dynarex.com redirects here; using the apex directly keeps the printed
+# URLs comparable with what a browser shows.
+BASE = "https://dynarex.com"
 PARTS = ("3161", "3553", "3173", "3683")
 
 # Nothing here may be visited. The list is matched against the path of every
@@ -111,6 +121,28 @@ def _blocked_by_a_captcha(page: Page) -> bool:
     return page.locator("iframe[src*='recaptcha'], iframe[src*='hcaptcha']").count() > 0
 
 
+def _landed_on(page: Page, path: str) -> None:
+    """What was actually at a path.
+
+    The first version of this script printed only whether it found what it
+    was looking for, so a wrong guess about the platform read as "the
+    portal has no login page". Every attempt now says where it ended up.
+    """
+    try:
+        text = re.sub(r"\s+", " ", page.locator("body").inner_text()).strip()
+    except PlaywrightTimeout:
+        text = "(no body)"
+    passwords = page.locator("input[type='password']").count()
+    print(
+        f"  tried {path}\n"
+        f"    ended at {page.url}\n"
+        f"    title: {page.title()!r}\n"
+        f"    password fields: {passwords}, forms: {page.locator('form').count()}, "
+        f"captcha: {_blocked_by_a_captcha(page)}\n"
+        f"    first words: {_clean(text)[:200]!r}"
+    )
+
+
 def _describe_forms(page: Page, label: str) -> None:
     """Every form on the page, by the names its fields actually carry.
 
@@ -140,22 +172,28 @@ def _describe_forms(page: Page, label: str) -> None:
 
 
 def _sign_in(page: Page, email: str, password: str) -> bool:
-    for path in ("/customer/account/login/", "/login", "/account/login"):
+    print("\n--- looking for the sign-in page ---")
+    for path in ("/user/login/", "/user/login", "/customer/account/login/", "/login"):
         _open(page, BASE + path)
+        _landed_on(page, path)
         if _blocked_by_a_captcha(page):
             print(f"\nCAPTCHA at {path} — the portal is challenging this browser.")
             return False
         if page.locator("input[type='password']").count():
             break
     else:
-        print("\nNo sign-in form found at any of the usual paths.")
+        print("\nNo sign-in form found at any of the paths above.")
         return False
 
-    print(f"sign-in page: {page.url}")
+    print(f"\nsign-in page: {page.url}")
     _describe_forms(page, "the sign-in page")
 
-    page.locator("input[type='email'], input[name*='email' i]").first.fill(email)
-    page.locator("input[type='password']").first.fill(password)
+    # commercebuild names these login_username and login_password; the
+    # broader selectors are the fallback if the theme is ever changed.
+    page.locator(
+        "input[name='login_username'], input[type='email'], input[name*='email' i]"
+    ).first.fill(email)
+    page.locator("input[name='login_password'], input[type='password']").first.fill(password)
     with page.expect_navigation(wait_until="domcontentloaded", timeout=45_000):
         page.locator("button[type='submit'], input[type='submit']").first.click()
 
@@ -168,15 +206,17 @@ def _sign_in(page: Page, email: str, password: str) -> bool:
 
 def _read_cart(page: Page) -> None:
     """Question 2: what does the cart look like, and is it Zach's cart?"""
-    for path in ("/checkout/cart/", "/cart"):
+    print("\n--- looking for the cart ---")
+    for path in ("/cart", "/cart/index", "/checkout/cart/"):
         try:
             _open(page, BASE + path)
         except RefusedUrl:
-            # /checkout/cart/ is a cart page on a Magento-shaped site and a
-            # checkout path by name. The name wins: this script does not
-            # decide that a URL containing 'checkout' is harmless.
-            print(f"\nrefused to open {path} — it matches a checkout path by name.")
+            # A cart page whose URL says 'checkout' is still a checkout path
+            # by name. The name wins: this script does not decide that a URL
+            # containing 'checkout' is harmless.
+            print(f"  refused to open {path} — it matches a checkout path by name.")
             continue
+        _landed_on(page, path)
         if page.locator("text=/shopping cart|your cart|cart is empty/i").count():
             break
     print(f"\ncart page: {page.url}")
@@ -191,26 +231,44 @@ def _read_cart(page: Page) -> None:
 
 def _quick_order(page: Page) -> None:
     """Question 3: what is a Quick Order row made of?"""
-    for path in ("/quickorder", "/quick-order", "/customer/quickorder", "/order/quick"):
+    print("\n--- looking for Quick Order ---")
+    for path in ("/cart/quickorders", "/quickorder", "/quick-order"):
         _open(page, BASE + path)
+        _landed_on(page, path)
+        if page.locator("input[name='login_password']").count():
+            print("    that is the sign-in page — Quick Order is behind the login.")
+            continue
         body = page.locator("body").inner_text().lower()
-        if "quick order" in body or page.locator("input[name*='sku' i]").count():
+        if (
+            "quick order" in body
+            or page.locator("input[name*='sku' i], input[name*='code' i]").count()
+        ):
             print(f"\nquick order page: {page.url}")
             _describe_forms(page, "the quick order page")
             return
-    print("\nNo Quick Order page found at any of the usual paths.")
+    print("\nNo Quick Order page found at any of the paths above.")
 
 
 def _catalogue(page: Page) -> None:
     """Do the four parts in boms.yaml exist under those numbers?"""
     for part in PARTS:
-        _open(page, f"{BASE}/catalogsearch/result/?q={part}")
-        titles = page.evaluate(
-            """() => [...document.querySelectorAll('[class*=product-item] a, .product-item-link')]
-                .map(link => (link.innerText || '').replace(/\\s+/g, ' ').trim())
-                .filter(Boolean).slice(0, 5)"""
+        _open(page, f"{BASE}/product_search/?q={part}")
+        results = page.evaluate(
+            """() => [...document.querySelectorAll('[class*=product], [class*=item]')]
+                .map(node => (node.innerText || '').replace(/\\s+/g, ' ').trim())
+                .filter(text => /Code:/.test(text) && text.length < 200)
+                .slice(0, 8)"""
         )
-        print(f"  search {part}: {titles}")
+        codes = sorted({code for text in results for code in re.findall(r"Code:\s*(\S+)", text)})
+        # The site's search is a 'contains' search — 3161 also returns 33161
+        # and 43161 — so an exact code is the only acceptable answer, the
+        # same standard the NAR catalogue lookup was fixed to apply.
+        print(f"  {part}: exact match {part in codes} — search returned {codes}")
+        named = {
+            _clean(text) for text in results if re.search(rf"Code:\s*{re.escape(part)}\b", text)
+        }
+        for text in sorted(named, key=len, reverse=True)[:2]:
+            print(f"      {text}")
 
 
 def main(argv: list[str]) -> int:
@@ -218,10 +276,15 @@ def main(argv: list[str]) -> int:
     print(f"Reading {BASE} only. Nothing is added to the cart. Nothing is ordered.\n")
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless="--headless" in argv)
+        try:
+            browser = playwright.chromium.launch(headless="--headless" in argv)
+        except PlaywrightError as missing:
+            print(f"{missing}\n\nRun `uv run playwright install chromium` first.")
+            return 1
         page = browser.new_page()
         try:
             _open(page, BASE + "/")
+            _landed_on(page, "/")
             if _blocked_by_a_captcha(page):
                 print(
                     "CAPTCHA on the front page. The portal is challenging this browser "

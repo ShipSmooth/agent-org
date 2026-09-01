@@ -49,6 +49,8 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 strict = true
 python_version = "3.12"
 files = ["src", "tests"]
+# The spike scripts Zach runs by hand share one module, and a test imports it.
+mypy_path = ["scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

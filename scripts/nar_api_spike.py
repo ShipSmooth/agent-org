@@ -29,24 +29,32 @@ The catalogue half needs no account at all, and can be run on its own:
 
     uv run python scripts/nar_api_spike.py --catalogue-only
 
-It asks for the narescue.com email and password at the prompt (nothing is
-echoed, nothing is stored, nothing is written to disk), or takes them from
-NAR_EMAIL and NAR_PASSWORD if they are already in the environment. The
-token is never printed. Output is filtered: anything that looks like an
-address, a name, a telephone number or an email is removed before it
-reaches the screen, so the whole output can be pasted back as-is.
+The login comes from `.env`, read the same way `shannon` itself reads it:
+ITHRIVE_NAR_EMAIL and ITHRIVE_NAR_PASSWORD (bare NAR_ names, and USERNAME
+for EMAIL, work too). Only if the file has neither does it ask at the
+prompt. The token is never printed.
+
+It prints more than fits in a chat message, so it can write the lot to a
+file instead:
+
+    uv run python scripts/nar_api_spike.py --out
+
+Output is filtered either way: anything that looks like an address, a name,
+a telephone number or an email is removed before it is written, so the
+whole file can be handed on as it is.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
-from getpass import getpass
 from typing import Any
 
 import httpx
+from spike_support import credentials, out_path, transcript
+
+OUT_DEFAULT = "nar-spike.txt"
 
 BASE = "https://www.narescue.com"
 IPOK = "80-0167"
@@ -119,12 +127,6 @@ def _request(client: httpx.Client, method: str, path: str, **kwargs: Any) -> htt
     if path not in ALLOWED_PATHS:
         raise RefusedPath(path)
     return client.request(method, BASE + path, timeout=30, **kwargs)
-
-
-def _credentials() -> tuple[str, str]:
-    email = os.environ.get("NAR_EMAIL") or input("narescue.com email: ").strip()
-    password = os.environ.get("NAR_PASSWORD") or getpass("narescue.com password (not echoed): ")
-    return email, password
 
 
 def _token(client: httpx.Client, email: str, password: str) -> str | None:
@@ -221,6 +223,11 @@ def _ipok(client: httpx.Client) -> None:
 
 
 def main(argv: list[str]) -> int:
+    with transcript(out_path(argv, OUT_DEFAULT)):
+        return _ask(argv)
+
+
+def _ask(argv: list[str]) -> int:
     print(__doc__.split("\n\n")[0])
     print(f"Reading {BASE} only, and only these paths: {', '.join(sorted(ALLOWED_PATHS))}")
     print("Nothing is added to the cart. Nothing is ordered.\n")
@@ -228,7 +235,7 @@ def main(argv: list[str]) -> int:
 
     with httpx.Client(follow_redirects=False) as client:
         if not catalogue_only:
-            email, password = _credentials()
+            email, password = credentials("NAR", "narescue.com")
             token = _token(client, email, password)
             if token is None:
                 print("\nNo token, so no cart read. Nothing was changed.")

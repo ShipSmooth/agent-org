@@ -36,12 +36,19 @@ or payment path.
 
     uv run python scripts/dynarex_portal_spike.py
 
-It asks for the portal email and password at the prompt (nothing echoed,
-nothing stored, nothing written to disk), or takes DYNAREX_EMAIL and
-DYNAREX_PASSWORD from the environment. The password is never printed.
-Output is filtered: anything that looks like an email address, a telephone
-number or a street line is removed before it reaches the screen, so the
-whole output can be pasted straight back.
+The login comes from `.env`, read the same way `shannon` itself reads it:
+ITHRIVE_DYNAREX_EMAIL and ITHRIVE_DYNAREX_PASSWORD (bare DYNAREX_ names,
+and USERNAME for EMAIL, work too). Only if the file has neither does it
+ask at the prompt. The password is never printed.
+
+It prints more than fits in a chat message, so it can write the lot to a
+file instead:
+
+    uv run python scripts/dynarex_portal_spike.py --out
+
+Output is filtered either way: anything that looks like an email address, a
+telephone number or a street line is removed before it is written, so the
+whole file can be handed on as it is.
 
 A browser window opens and stays open; that is deliberate, so the cart on
 screen can be compared with what the script prints. Add `--headless` to run
@@ -50,16 +57,17 @@ it without one.
 
 from __future__ import annotations
 
-import os
 import re
 import sys
-from getpass import getpass
 from typing import Any
 from urllib.parse import urlparse
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
+from spike_support import credentials, out_path, transcript
+
+OUT_DEFAULT = "dynarex-spike.txt"
 
 # www.dynarex.com redirects here; using the apex directly keeps the printed
 # URLs comparable with what a browser shows.
@@ -105,12 +113,6 @@ def _open(page: Page, url: str) -> None:
     if FORBIDDEN.search(path):
         raise RefusedUrl(url)
     page.goto(url, wait_until="domcontentloaded", timeout=45_000)
-
-
-def _credentials() -> tuple[str, str]:
-    email = os.environ.get("DYNAREX_EMAIL") or input("dynarex.com email: ").strip()
-    password = os.environ.get("DYNAREX_PASSWORD") or getpass("dynarex.com password (not echoed): ")
-    return email, password
 
 
 def _blocked_by_a_captcha(page: Page) -> bool:
@@ -272,6 +274,11 @@ def _catalogue(page: Page) -> None:
 
 
 def main(argv: list[str]) -> int:
+    with transcript(out_path(argv, OUT_DEFAULT)):
+        return _look(argv)
+
+
+def _look(argv: list[str]) -> int:
     print(__doc__.split("\n\n")[0])
     print(f"Reading {BASE} only. Nothing is added to the cart. Nothing is ordered.\n")
 
@@ -293,7 +300,7 @@ def main(argv: list[str]) -> int:
                 )
                 return 1
 
-            email, password = _credentials()
+            email, password = credentials("DYNAREX", "dynarex.com")
             if not _sign_in(page, email, password):
                 print("\nNot signed in, so nothing further was read. Nothing was changed.")
                 return 1

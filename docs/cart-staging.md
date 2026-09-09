@@ -171,51 +171,61 @@ Three portal-shaped hazards, each answered the same way NAR's were:
   of them all stop the run and quote what was actually found. A challenge
   is never worked around.
 
-### The Quick Order row is drawn twice, and the first look sees half of it
+### The Quick Order row: a dropdown, a click, and a quantity afterwards
 
-The first live run added nothing and said the page held only its two
-search forms. That was true and useless: the row is not inside a form,
-and it is not finished when the page arrives. The portal draws a
-part-number box, answers what is typed into it over AJAX
-(`quickorders/updatePrice`), and only then puts a quantity beside it. A
-single scan run the moment the HTML landed, looking for a form holding a
-box named for a code with a quantity next to it, could not have found a
-row on that page however long it looked.
+Two rounds of inferring this page from its markup got it wrong, so Zach
+watched it work in the browser. What it actually does:
 
-So Shannon looks in two passes, and keeps looking for up to fifteen
-seconds each time:
+- The page opens with about twenty blank rows. Each already holds a search
+  box and a quantity box; neither is injected later.
+- Typing in a search box drops a live autocomplete under the row, and it
+  is the contains search again: 3161 offers 33161 and 43161 too.
+- **Typing alone does nothing.** There is no type-and-tab path and no Add
+  button. Clicking a suggestion is the act that does everything.
+- About two seconds after the click the row fills in its description, unit
+  price, UOM and a quantity of **1** — and the line is in the cart from
+  that moment.
+- The quantity box is then overwritten with the real quantity, which edits
+  the line that is already there.
 
-1. **Find the box.** Any visible, empty, editable text box that is not the
-   site's search — excluded by its name (`q`), its id, and the search form
-   it belongs to, never by the word "search" nearby, because the live row
-   sits in a cell whose own class is `search-box`. Among those, the box
-   named for a part number wins; failing that, one with a quantity already
-   beside it; failing that, the only box on the page. The last is not a
-   guess: it is taken only when there is exactly one, so there is no other
-   box it could have meant.
-2. **Type, then find the quantity.** The part number is typed a character
-   at a time, because the portal hangs its lookup off the keystrokes and a
-   value set in one go arrives at a page that never asked. The quantity is
-   then looked for as a sibling in the row — climbing out of the cell,
-   which never holds both — until it appears.
+So Shannon takes a blank row first — an empty search box with a quantity
+beside it, the site's own search excluded by its name (`q`), its id and
+the search form it belongs to, never by the word "search" nearby, because
+the live row sits in a cell whose own class is `search-box`. Nothing is
+typed until a row is found, so a page she cannot read is a page she has
+not touched.
 
-Either pass failing is a refusal that quotes every field on the page, not
-just its forms. Listing forms is what made the first failure unreadable.
+Then she types the part number a character at a time, waits up to fifteen
+seconds for the dropdown, and clicks **only** the suggestion whose own
+code is the SKU — parsed out of the `(3161)` suffix the dropdown writes.
+33161 and 43161 are real products, and no suggestion is clicked to see
+what it is. If the part itself is never offered, nothing is clicked, which
+is a refusal that has added nothing: the cart is untouched because typing
+is not an add.
 
-One honest caveat: the shape above is read from the live run's own
-failure, from the page's public markup and from the theme's
-`quickorders/updatePrice` call — not yet from a signed-in look at the
-finished row, which needs the account. `scripts/dynarex_portal_spike.py`
-now prints exactly that, field by field, before and after a part number
-is typed (typing is a lookup; it clicks nothing). The next signed-in run
-of it either confirms this or says plainly what is there instead.
+Every refusal quotes what was actually on the page — fields as well as
+forms, since the row belongs to no form and listing forms is what made the
+first live failure unreadable.
 
-The Quick Order page carries a Checkout button. Shannon walks past it: no
-button whose text offers to check out, pay, place or submit an order is
-ever clicked, wherever the portal puts one — and, since the row's own
-buttons are not in a form either, the button she does click has to say it
-adds. Anything unlabelled, or labelled Clear, Remove or Upload, is left
-alone rather than clicked to find out.
+### Between the click and the quantity, the cart is wrong rather than clean
+
+This is the one place Shannon can leave a mark she cannot undo. The click
+puts the line in at quantity 1; a crash, a timeout or a row that never
+fills itself in after that leaves the cart holding 1 of the part rather
+than leaving it empty. "The add failed" would be read as "the cart is
+clean", and it would be false.
+
+So every failure after the click says what the cart now holds, that it
+should have held, and that Shannon does not remove or edit cart lines —
+correct it by hand at `/cart`. The verification after an add checks the
+quantity, not merely the presence of the line: a line found at 1 where 5
+was asked for fails loudly and says so in those terms.
+
+The Quick Order page carries "Add Row", "View Cart", a running Sub-Total
+and "Proceed to Checkout". Shannon clicks none of them. The only things
+she touches on that page are an autocomplete suggestion — checked against
+the same buying-words rule before the click, whatever tag it is on — and a
+quantity box.
 
 ## What a live run checks afterwards
 

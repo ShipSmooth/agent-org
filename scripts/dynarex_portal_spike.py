@@ -67,7 +67,12 @@ from playwright.sync_api import Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from spike_support import credentials, out_path, transcript
 
-from agent_org.integrations.dynarex import FIELDS_JS, QUICK_ORDER_SKU_JS
+from agent_org.integrations.dynarex import (
+    FIELDS_JS,
+    QUICK_ORDER_ROW_JS,
+    SUGGESTIONS_JS,
+    exact_suggestion,
+)
 
 OUT_DEFAULT = "dynarex-spike.txt"
 
@@ -287,36 +292,40 @@ def _quick_order(page: Page) -> None:
 
 
 def _describe_row(page: Page) -> None:
-    """The row as Shannon sees it, with the same scan she uses."""
+    """A blank row, and the dropdown a part number brings up in it.
+
+    Typing is a lookup and stops there. Clicking a suggestion is what puts
+    a line in the cart, so this script types and never clicks: the whole
+    point of it is to look at the page without changing it.
+    """
     try:
         page.wait_for_load_state("networkidle", timeout=15_000)
     except PlaywrightTimeout:
         print("    the page never went quiet; describing it as it stands.")
     _say("every field on the quick order page, before typing", page.evaluate(FIELDS_JS))
 
-    found = page.evaluate(QUICK_ORDER_SKU_JS)
-    _say("the box Shannon would take for the part number", found)
-    if found is None:
+    row = page.evaluate(QUICK_ORDER_ROW_JS)
+    _say("the blank row Shannon would use", row)
+    if row is None:
         return
 
-    # Typing a part number is a lookup, not an order: nothing is added
-    # here, and no button is clicked at all.
     box = page.locator("[data-shannon-sku]").first
     box.click()
     box.press_sequentially(PARTS[0], delay=60, timeout=45_000)
     page.wait_for_timeout(3_000)
+    offered = [dict(option) for option in page.evaluate(SUGGESTIONS_JS, PARTS[0])]
+    _say(f"what the dropdown offers for {PARTS[0]}", [option["text"] for option in offered])
+    _say(
+        "which of those Shannon would click, by exact code",
+        exact_suggestion(PARTS[0], offered),
+    )
     _say(f"every field after typing {PARTS[0]} into it", page.evaluate(FIELDS_JS))
     _say(
-        "the buttons that appear in the row",
+        "the buttons on the page, none of which are clicked here",
         page.evaluate(
-            """() => {
-              const box = document.querySelector('[data-shannon-sku]');
-              let node = box;
-              for (let step = 0; node && step < 6; step++) node = node.parentElement;
-              return [...(node || document).querySelectorAll('button, input[type=submit]')]
-                  .map(button => (button.innerText || button.value || '').trim())
-                  .filter(Boolean).slice(0, 20);
-            }"""
+            """() => [...document.querySelectorAll('button, input[type=submit]')]
+                .map(button => (button.innerText || button.value || '').trim())
+                .filter(Boolean).slice(0, 30)"""
         ),
     )
 

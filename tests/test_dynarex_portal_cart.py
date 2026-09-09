@@ -7,6 +7,13 @@ login page carries the search box twice before the login, the search is a
 *contains* search that answers 3161 with 33161 and 43161 as well, and
 Quick Order is a part-number box with a quantity beside it.
 
+The Quick Order page below is shaped like the live one rather than like a
+form: the row is an `rTable` of `rTableCell` divs and not a `<table>`, the
+part-number box sits in a cell whose own class is `search-box`, the
+quantity arrives only once a code has been typed, and none of it is
+inside a `<form>` — which is why the first live run described the page as
+holding nothing but its two search forms, and added nothing.
+
 Nothing here touches dynarex.com, and the portal below has a Checkout
 button on the Quick Order page on purpose — the one button Shannon must
 walk past.
@@ -57,6 +64,34 @@ SEARCH_FORM = """
 </form>
 """
 
+# The live Quick Order page answers a typed part number over AJAX and only
+# then has a quantity to fill in, and its buttons post by script rather
+# than by belonging to a form. Both are copied here, since both are what
+# the first live run's scan was too early and too literal to see.
+QUICK_ORDER_SCRIPT = """
+const code = document.querySelector('.qo-box');
+code.addEventListener('input', () => {
+  if (code.value.length < 3 || document.querySelector('#qty')) return;
+  setTimeout(() => {
+    document.querySelector('.qty-cell').innerHTML =
+        "<input id='qty' name='qty' value=''>";
+  }, 300);
+});
+const send = which => {
+  const qty = document.querySelector('#qty');
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/cart/quickorders';
+  form.innerHTML = "<input name='item_code' value='" + code.value + "'>" +
+      "<input name='qty' value='" + (qty ? qty.value : '') + "'>" +
+      "<input name='" + which + "' value='1'>";
+  document.body.appendChild(form);
+  form.submit();
+};
+document.querySelector('#add').addEventListener('click', () => send('add'));
+document.querySelector('#co').addEventListener('click', () => send('checkout'));
+"""
+
 
 def _login_page() -> str:
     return f"""<html><body>Welcome Guest
@@ -75,6 +110,7 @@ class _Portal(BaseHTTPRequestHandler):
     cart: ClassVar[dict[str, int]] = {}
     clicked: ClassVar[list[str]] = []
     captcha: ClassVar[bool] = False
+    quick_order_row: ClassVar[bool] = True
 
     def _send(self, body: str) -> None:
         self.send_response(200)
@@ -97,17 +133,29 @@ class _Portal(BaseHTTPRequestHandler):
         )
 
     def _quick_order_page(self) -> str:
-        return f"""<html><body>Sign Out
+        """The live page's shape: cells rather than a table, no form, and
+        a quantity that only exists once a part number has been typed."""
+        return f"""<html><body class="quick-orders-page">Sign Out
 {SEARCH_FORM}
-<form action="/cart/quickorders" method="POST">
-  <table><tr>
-    <td><input type="text" name="item_code" placeholder="Item Code"></td>
-    <td><input type="text" name="qty" value=""></td>
-  </tr></table>
-  <button type="submit" name="checkout">Checkout</button>
-  <button type="submit" name="add">Add to Cart</button>
-</form>
+<div class="rTable"><div class="rTableRow">
+  <div class="rTableCell search-box">
+    <input type="text" class="qo-box" autocomplete="off">
+    <button class="search-btn-quickorder">Search</button>
+  </div>
+  <div class="rTableCell qty-cell"></div>
+  <div class="rTableCell">
+    <button id="co">Checkout</button>
+    <button id="add">Add to Cart</button>
+  </div>
+</div></div>
+<script>
+{QUICK_ORDER_SCRIPT}
+</script>
 </body></html>"""
+
+    def _search_boxes_only_page(self) -> str:
+        """The page as the first live run described it: no row at all."""
+        return f"<html><body>Sign Out{SEARCH_FORM}{SEARCH_FORM}</body></html>"
 
     def _search_page(self, sku: str) -> str:
         results = "".join(
@@ -125,7 +173,9 @@ class _Portal(BaseHTTPRequestHandler):
         if path == "/cart":
             self._send(self._cart_page())
         elif path == "/cart/quickorders":
-            self._send(self._quick_order_page())
+            self._send(
+                self._quick_order_page() if self.quick_order_row else self._search_boxes_only_page()
+            )
         elif path == "/product_search":
             self._send(self._search_page(parse_qs(parsed.query).get("q", [""])[0]))
         else:
@@ -154,6 +204,7 @@ def portal() -> Iterator[str]:
     _Portal.cart = {}
     _Portal.clicked = []
     _Portal.captcha = False
+    _Portal.quick_order_row = True
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Portal)
     Thread(target=server.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{server.server_port}"
@@ -176,7 +227,7 @@ def page() -> Iterator[Page]:
 def cart(portal: str, page: Page, monkeypatch: pytest.MonkeyPatch) -> DynarexPortalCart:
     monkeypatch.setenv("DYNAREX_EMAIL", EMAIL)
     monkeypatch.setenv("DYNAREX_PASSWORD", PASSWORD)
-    return DynarexPortalCart(base_url=portal, page=page)
+    return DynarexPortalCart(base_url=portal, page=page, settle_ms=5_000)
 
 
 def test_an_empty_cart_is_read_as_empty_and_a_full_one_line_by_line(
@@ -211,6 +262,29 @@ def test_the_checkout_button_on_the_quick_order_page_is_never_the_one_clicked(
     cart.add_line("3161", 1)
 
     assert _Portal.clicked == ["add"]
+
+
+def test_the_search_box_is_never_mistaken_for_the_part_number_box(
+    cart: DynarexPortalCart,
+) -> None:
+    """Both boxes are empty text boxes; only one of them orders anything."""
+    cart.add_line("3161", 2)
+
+    assert _Portal.cart == {"3161": 2}
+
+
+def test_a_quick_order_page_with_no_row_says_what_it_did_hold_instead(
+    cart: DynarexPortalCart,
+) -> None:
+    """The refusal names fields rather than forms: the live row belongs to
+    no form, so listing forms described a page nobody had looked at."""
+    _Portal.quick_order_row = False
+
+    with pytest.raises(CartUnavailable, match="holds these fields") as refused:
+        cart.add_line("3161", 1)
+
+    assert "Nothing was added" in str(refused.value)
+    assert _Portal.cart == {}
 
 
 def test_a_part_the_portal_only_answers_with_its_neighbours_is_refused(
@@ -284,6 +358,7 @@ def test_the_only_thing_this_client_can_do_to_a_cart_is_read_it_and_add_to_it() 
     assert verbs == {"add_line", "read_cart", "base_url", "credentials_prefix"} | {
         "headless",
         "page",
+        "settle_ms",
         "supplier",
         "timeout_ms",
     }

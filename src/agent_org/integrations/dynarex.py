@@ -47,6 +47,7 @@ import os
 import re
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from time import monotonic
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -94,6 +95,11 @@ BUYING_BUTTON = re.compile(
     r"check\s*out|place\s*(the\s*)?order|submit\s*order|pay\b|paypal|purchase|buy\s*now",
     re.IGNORECASE,
 )
+
+# The button that puts the row in the cart, by what it says. Anything the
+# portal has not labelled as adding — Clear, Remove, Save, Upload — is
+# left alone rather than clicked to see what it does.
+ADDING_BUTTON = re.compile(r"add\b|add\s*to\s*cart|update\s*cart|submit\b", re.IGNORECASE)
 
 EMAIL_VAR = "DYNAREX_EMAIL"
 PASSWORD_VAR = "DYNAREX_PASSWORD"
@@ -153,29 +159,106 @@ CART_ROWS_JS = """() => {
   })).filter(row => row.text.length > 2);
 }"""
 
-# A Quick Order row: a text box asking for a code, and the quantity beside
-# it. The search box is excluded by name and by the form it lives in — it
-# is the field that made the spike search for an empty string.
-QUICK_ORDER_JS = """() => {
-  const fields = [...document.querySelectorAll("input[type=text], input:not([type])")];
-  const wanted = /sku|code|item|part|product/i;
-  for (const field of fields) {
-    const name = (field.getAttribute('name') || '') + ' ' + (field.id || '') + ' ' +
-                 (field.getAttribute('placeholder') || '');
-    if (name.trim() === 'q' || field.id === 'search') continue;
-    if (field.closest('#search_mini_form')) continue;
-    if (!wanted.test(name)) continue;
-    if (field.value) continue;
-    const row = field.closest('tr, [class*=row], [class*=item], form, div');
-    const qty = row && row.querySelector("input[name*='qty' i], input[id*='qty' i]");
-    if (!qty) continue;
-    field.setAttribute('data-shannon-sku', '1');
-    qty.setAttribute('data-shannon-qty', '1');
-    return {sku_field: field.getAttribute('name') || field.id,
-            qty_field: qty.getAttribute('name') || qty.id};
-  }
-  return null;
+# The pieces of the page every scan below shares. The part-number box on
+# the live Quick Order page sits in a cell whose own class is `search-box`
+# — the word means something else there — so the site's search box is
+# excluded by the form it belongs to and by its own name, never by the
+# word 'search' appearing somewhere near it.
+QUICK_ORDER_PRELUDE = """
+  const SITE_SEARCH = "#search_mini_form, form[action*='product_search' i], " +
+                      "form[action*='/search' i]";
+  const QTY = "input[name*='qty' i], input[id*='qty' i], input[class*='qty' i], " +
+              "input[name*='quantity' i], input[id*='quantity' i], " +
+              "input[aria-label*='quantity' i], input[type=number]";
+  const CODEISH = /sku|code|item|part|product|catalog/i;
+  const shown = node => !!(node.offsetParent || node.getClientRects().length);
+  const named = field => [field.getAttribute('name'), field.id,
+                          field.getAttribute('placeholder'),
+                          field.getAttribute('aria-label')]
+      .filter(Boolean).join(' ');
+  const described = field => named(field) + ' ' + (field.className || '');
+  const isSiteSearch = field => (field.getAttribute('name') || '').trim() === 'q' ||
+      field.id === 'search' || !!field.closest(SITE_SEARCH);
+  const typed = field => (field.getAttribute('type') || 'text').toLowerCase();
+  const boxes = () => [...document.querySelectorAll('input')]
+      .filter(field => ['text', 'search', 'tel', ''].includes(typed(field)))
+      .filter(shown)
+      .filter(field => !field.disabled && !field.readOnly)
+      .filter(field => !isSiteSearch(field));
+  // The part-number box and its quantity sit in different cells of the
+  // same row, so the enclosing element is climbed to rather than taken:
+  // `closest('div')` is the cell, and the cell holds no quantity.
+  const beside = (field, selector) => {
+    for (let node = field.parentElement, step = 0;
+         node && node !== document.body && step < 8;
+         node = node.parentElement, step++) {
+      const found = [...node.querySelectorAll(selector)].filter(shown);
+      if (found.length) return found[0];
+    }
+    return null;
+  };
+"""
+
+# The part-number box, wanted three ways in order of how much the page
+# has said about it: called a code, or sitting beside a quantity, or the
+# one box on the page that is not the site's search. The third is not a
+# guess so much as the absence of an alternative — and it is only taken
+# when there is exactly one, so it can never pick the wrong box.
+QUICK_ORDER_SKU_JS = (
+    """() => {"""
+    + QUICK_ORDER_PRELUDE
+    + """
+  const empty = boxes().filter(field => !field.value);
+  const ways = [
+    ['it is named for a part number', empty.find(box => CODEISH.test(described(box)))],
+    ['it has a quantity beside it', empty.find(box => beside(box, QTY))],
+    ['it is the only box on the page', empty.length === 1 ? empty[0] : null],
+  ];
+  const chosen = ways.find(way => way[1]);
+  if (!chosen) return null;
+  const field = chosen[1];
+  field.setAttribute('data-shannon-sku', '1');
+  return {sku_field: named(field).trim() || '(unnamed)', found_because: chosen[0]};
 }"""
+)
+
+# The quantity, looked for only once the part number is in the box: the
+# live page fills a row in by AJAX as the code is typed, so a quantity
+# that is not there at first is not a quantity that is not there.
+QUICK_ORDER_QTY_JS = (
+    """() => {"""
+    + QUICK_ORDER_PRELUDE
+    + """
+  const field = document.querySelector('[data-shannon-sku]');
+  if (!field) return null;
+  const qty = beside(field, QTY);
+  if (!qty) return null;
+  qty.setAttribute('data-shannon-qty', '1');
+  return {qty_field: named(qty).trim() || '(unnamed)'};
+}"""
+)
+
+# What is actually on the page, for a refusal to quote. Forms alone were
+# not enough: the live page answered with its two search forms and nothing
+# else, which says a Quick Order row is not inside a form there but says
+# nothing at all about the boxes that are on it.
+FIELDS_JS = (
+    """() => {"""
+    + QUICK_ORDER_PRELUDE
+    + """
+  return [...document.querySelectorAll('input, select, textarea')]
+      .filter(field => (field.getAttribute('type') || '').toLowerCase() !== 'hidden')
+      .slice(0, 40)
+      .map(field => ({
+        tag: field.tagName.toLowerCase(),
+        type: field.getAttribute('type') || '',
+        name: field.getAttribute('name') || field.id || null,
+        placeholder: field.getAttribute('placeholder') || null,
+        cell: (field.parentElement || {}).className || null,
+        shown: shown(field),
+      }));
+}"""
+)
 
 FORMS_JS = """() => [...document.querySelectorAll('form')].map(form => ({
   action: form.getAttribute('action'),
@@ -260,6 +343,10 @@ class DynarexPortalCart:
     base_url: str = DYNAREX_BASE_URL
     headless: bool = True
     timeout_ms: int = 45_000
+    # How long a Quick Order row is given to appear. The row is drawn and
+    # then filled in by the portal's own JavaScript, so 'not there' only
+    # means anything after waiting for it.
+    settle_ms: int = 15_000
     # Injected by the tests, which drive every path below against a local
     # portal, with no account and nothing of Zach's touched.
     page: Page | None = field(default=None, compare=False, repr=False)
@@ -303,14 +390,7 @@ class DynarexPortalCart:
             name = self._confirm(page, sku)
             held_before = self._read(page).quantity_of(sku)
             self._open(page, QUICK_ORDER_PATH)
-            row = page.evaluate(QUICK_ORDER_JS)
-            if row is None:
-                raise CartUnavailable(
-                    f"Nothing on {QUICK_ORDER_PATH} looks like a Quick Order row — no "
-                    "empty part-number box with a quantity beside it. Nothing was "
-                    f"added. The page holds these forms: {page.evaluate(FORMS_JS)}"
-                )
-            page.locator("[data-shannon-sku]").first.fill(sku)
+            self._quick_order_row(page, sku)
             page.locator("[data-shannon-qty]").first.fill(str(quantity))
             self._submit(page)
             landed = self._read(page)
@@ -331,11 +411,70 @@ class DynarexPortalCart:
             f"{sku} is not in the dynarex.com cart after adding it. Nothing is reported as staged."
         )
 
+    def _quick_order_row(self, page: Page, sku: str) -> None:
+        """Put the part number in the row's box, and find its quantity.
+
+        In two steps rather than one because the row is only half there
+        when the page arrives: the box is typed into, the portal answers
+        by AJAX, and the rest of the row — the quantity among it — comes
+        back with that answer. A scan that ran once, the moment
+        domcontentloaded fired, saw the first half and called the page
+        empty of Quick Order rows.
+        """
+        found = self._wait_for(page, QUICK_ORDER_SKU_JS)
+        if found is None:
+            raise CartUnavailable(
+                f"Nothing on {QUICK_ORDER_PATH} looks like a Quick Order row — no "
+                "empty part-number box, named as one or with a quantity beside it. "
+                f"Nothing was added. The page holds these fields: {page.evaluate(FIELDS_JS)} "
+                f"and these forms: {page.evaluate(FORMS_JS)}"
+            )
+        # Typed rather than filled: the portal hangs its lookup off the
+        # keystrokes, and a value set in one go arrives at a page that
+        # never asked what the part number was.
+        box = page.locator("[data-shannon-sku]").first
+        box.click()
+        box.press_sequentially(sku, delay=60, timeout=self.timeout_ms)
+        if self._wait_for(page, QUICK_ORDER_QTY_JS) is None:
+            raise CartUnavailable(
+                f"The part-number box on {QUICK_ORDER_PATH} took {sku} (into "
+                f"'{found['sku_field']}') and no quantity appeared beside it within "
+                f"{self.settle_ms // 1000}s. Nothing was added. The page holds these "
+                f"fields: {page.evaluate(FIELDS_JS)}"
+            )
+
+    def _wait_for(self, page: Page, script: str) -> dict[str, Any] | None:
+        """Run a scan until it finds something, or until time is up.
+
+        The portal renders a Quick Order row in its own time, so a scan
+        is a question asked repeatedly rather than once.
+        """
+        deadline = monotonic() + self.settle_ms / 1000
+        while True:
+            found = page.evaluate(script)
+            if found is not None:
+                return dict(found)
+            if monotonic() >= deadline:
+                return None
+            page.wait_for_timeout(250)
+
     def _submit(self, page: Page) -> None:
-        """Click the button that adds the row, and nothing that buys it."""
+        """Click the button that adds the row, and nothing that buys it.
+
+        The form is only the first place looked, not the only one: a row
+        on the live page need not be inside a form at all — the portal
+        adds by AJAX, and a page whose only forms are its two search
+        boxes still has an Add button in the row. So the row itself, and
+        then the page, are searched after it.
+        """
+        row = page.locator("[data-shannon-sku]").locator(
+            "xpath=ancestor::*[.//*[@data-shannon-qty]][1]"
+        )
         form = page.locator("form:has([data-shannon-sku])").first
-        buttons = form.locator("button, input[type=submit]") if form.count() else None
-        if buttons is not None:
+        for scope in (form, row, page.locator("body")):
+            if not scope.count():
+                continue
+            buttons = scope.locator("button, input[type=submit], input[type=button]")
             for index in range(buttons.count()):
                 button = buttons.nth(index)
                 label = (button.inner_text() or button.get_attribute("value") or "").strip()
@@ -343,6 +482,8 @@ class DynarexPortalCart:
                     # Not a refusal of the whole run: the portal is allowed
                     # to put a checkout button on the page. It is a refusal
                     # to be the thing that clicks it.
+                    continue
+                if not ADDING_BUTTON.search(label):
                     continue
                 button.click()
                 page.wait_for_load_state("domcontentloaded", timeout=self.timeout_ms)

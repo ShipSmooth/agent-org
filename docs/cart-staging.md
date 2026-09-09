@@ -8,6 +8,13 @@ document is mostly about why it cannot become one.
     uv run shannon stage --live              # adds to the real cart; needs a phase exception
     uv run shannon stage --week 2026-W35     # a particular week
     uv run shannon stage --live-data         # read the real cart rather than a saved copy
+    uv run shannon stage --supplier dynarex  # the other cart she can fill
+
+Two suppliers have a cart she can fill: NAR, over its Magento REST API,
+and Dynarex, driven through a browser because dynarex.com is a
+commercebuild portal with no API at all. Everything below is true of both
+unless it names one of them; `--supplier` picks which, and a supplier with
+no client is refused by name rather than falling back to another's cart.
 
 ## It acts on the report, and calculates nothing
 
@@ -47,10 +54,10 @@ value that is empty once quotes come off as "live", and both take
 Without `--live`, Shannon reads the supplier's cart, works out exactly
 which SKUs and quantities would be added, writes the confirmation report
 and emails it. The supplier's cart is never written to. The action is
-`nar.plan_cart_staging`, Tier 0, and it is the only staging action this
-phase can run.
+`<supplier>.plan_cart_staging`, Tier 0, and it is the only staging action
+this phase can run.
 
-`--live` submits `nar.stage_cart`, which is Tier 2 in
+`--live` submits `<supplier>.stage_cart`, which is Tier 2 in
 `config/policy/global.yaml` and refused by the broker while
 `max_tier_this_phase` is 0. Raising that ceiling is a deliberate,
 reviewable change to policy — and it still cannot buy anything.
@@ -86,7 +93,11 @@ the real cart in week 36.
 
 Repeating a live action is normally impossible: the broker fingerprints
 each one and returns the earlier outcome instead of doing it twice.
-`nar.stage_cart` is passed to the broker as a *ledgered* action, so a
+Every action is named per supplier — `nar.stage_cart`,
+`dynarex.stage_cart`, and the two rehearsals beside them — so an exception
+Zach writes for one cart cannot quietly open the other.
+
+A live staging action is passed to the broker as a *ledgered* action, so a
 deliberate retry reaches the executor. That is safe because the guard
 underneath is stronger than the fingerprint: `cart_stagings` holds every
 SKU this week has put in this cart, under a unique key, and the executor
@@ -126,6 +137,35 @@ search, and the same exact-match test is applied to what comes back: a
 wider net, never a looser standard. Only when neither way holds the part
 is the part number called wrong.
 
+## Dynarex: a portal, a Quick Order form, and a contains-search
+
+Dynarex has no API, so the cart is read and filled in a real browser, and
+everything the client knows about the portal was read off the live site
+rather than assumed: sign-in at `/user/login` (`login_username` /
+`login_password`), the cart at `/cart`, Quick Order at
+`/cart/quickorders`, search at `/product_search/?q=`.
+
+Three portal-shaped hazards, each answered the same way NAR's were:
+
+- **The form is chosen by what it holds, not where it sits.** The sign-in
+  page carries the search box twice before the login, and taking the first
+  form searched for an empty string for a week. Every form used is located
+  by the field that identifies it — the password, the empty part-number
+  box.
+- **The search is a contains search.** Asking for 3161 also answers with
+  33161 and 43161, real products that are not the part. Only a result
+  whose own `Code:` is the SKU counts, and a SKU with no exact match is
+  refused rather than guessed at — NAR's kit bug, in a portal.
+- **A page that cannot be read is unknown, never empty.** A cart page that
+  says neither "empty" nor what it holds, a row with no part number, a
+  Quick Order page with no part-number box, and a captcha in place of any
+  of them all stop the run and quote what was actually found. A challenge
+  is never worked around.
+
+The Quick Order page carries a Checkout button. Shannon walks past it: no
+button whose text offers to check out, pay, place or submit an order is
+ever clicked, wherever the portal puts one.
+
 ## What a live run checks afterwards
 
 A line is not called added because the site returned 200. After live
@@ -151,12 +191,16 @@ and each is somewhere different:
    nothing for a caller — or a model — to reach for.
 3. **The paths are allow-listed.** `NarCartClient` may request exactly
    five URLs — a login, the cart, its totals, its items and the
-   catalogue. Anything else raises `CartRefusal` before a socket opens,
+   catalogue; `DynarexPortalCart` may open exactly four pages. Anything
+   else raises `CartRefusal` before a socket opens or the browser moves,
    and a second check refuses any path containing a checkout, order,
    payment or billing word even if someone adds it to the list later.
-4. **The methods are allow-listed.** Only GET and POST are ever sent.
-   Magento places an order with `PUT /rest/V1/carts/mine/order` and empties
-   a cart with DELETE; both are refused by method as well as by path.
+4. **The methods, and the buttons, are allow-listed.** Only GET and POST
+   are ever sent: Magento places an order with
+   `PUT /rest/V1/carts/mine/order` and empties a cart with DELETE, both
+   refused by method as well as by path. In the browser the equivalent is
+   the button text, and a button offering to buy is stepped over rather
+   than clicked.
 
 Tiers can be raised. None of the four above can be, without a code change
 that shows up in a diff as exactly what it is.
@@ -203,13 +247,14 @@ to let her write honestly:
 
 ## Credentials
 
-`NAR_EMAIL` and `NAR_PASSWORD`, under the entity's own prefix, read from
-the environment at the moment of use. Never in source, never in a report,
+`NAR_EMAIL` / `NAR_PASSWORD` and `DYNAREX_EMAIL` / `DYNAREX_PASSWORD`,
+under the entity's own prefix, read from the environment at the moment of
+use. Never in source, never in a report,
 never in a log — a refused login reports its status code and not its body.
 A missing or refused login stops the run; it never becomes an empty cart.
 
 ## Suppliers still to come
 
-Dynarex next (portal form, no API), Amazon Business last, and its Cart API
-gets its own action name rather than inheriting the Tier 1 rule for the
-URL-only staging that exists today.
+Amazon Business last, and its Cart API gets its own action name rather
+than inheriting the Tier 1 rule for the URL-only staging that exists
+today.

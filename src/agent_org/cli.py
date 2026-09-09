@@ -542,7 +542,10 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     stage_cmd.add_argument(
-        "--supplier", default="nar", help="which supplier's cart to stage (nar today)"
+        "--supplier",
+        default="nar",
+        choices=("nar", "dynarex"),
+        help="which supplier's cart to stage",
     )
     stage_cmd.add_argument(
         "--week",

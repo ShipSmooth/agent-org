@@ -44,13 +44,19 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
-from pathlib import Path
+from decimal import Decimal
 from typing import Any
 
 import httpx
 
-from agent_org.integrations.carts import Cart, CartLine, CartRefusal, CartUnavailable
+from agent_org.integrations.carts import (
+    Cart,
+    CartLine,
+    CartRefusal,
+    CartUnavailable,
+    SavedCartCopy,
+    money,
+)
 
 NAR_BASE_URL = "https://www.narescue.com"
 SUPPLIER = "nar"
@@ -165,15 +171,6 @@ class CartItem:
                 }
             }
         return {"cartItem": item}
-
-
-def _decimal(value: Any) -> Decimal | None:
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, ValueError):
-        return None
 
 
 def refuse_unless_safe(method: str, path: str) -> None:
@@ -404,7 +401,7 @@ class NarCartClient:
                     sku=str(item.get("sku", "")),
                     name=str(item.get("name", "")),
                     quantity=int(float(item.get("qty", 0) or 0)),
-                    price=_decimal(item.get("price")),
+                    price=money(item.get("price")),
                     item_id=None if item.get("item_id") is None else str(item["item_id"]),
                 )
             )
@@ -447,7 +444,7 @@ class NarCartClient:
             sku=staged,
             name=str(body.get("name") or item.name),
             quantity=landed,
-            price=_decimal(body.get("price")),
+            price=money(body.get("price")),
             item_id=None if body.get("item_id") is None else str(body["item_id"]),
         )
 
@@ -462,7 +459,7 @@ class NarCartClient:
 
     def _totals(self) -> tuple[Decimal | None, str]:
         body = self._json("GET", TOTALS_PATH)
-        return _decimal(body.get("grand_total")), str(body.get("quote_currency_code") or "USD")
+        return money(body.get("grand_total")), str(body.get("quote_currency_code") or "USD")
 
     def _json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         response = self._request(method, path, headers=self._auth(), **kwargs)
@@ -528,47 +525,16 @@ class NarCartClient:
 
 
 @dataclass
-class NarFixtureCart:
+class NarFixtureCart(SavedCartCopy):
     """The cart as a saved JSON file, for a dry run with no account.
 
-    Same interface, and `add_line` is absent by construction: a fixture
-    cart has nothing to add to. A dry run never calls it anyway — that is
-    what makes the dry run a dry run.
+    Same interface, and adding is refused by construction: a saved cart
+    has nothing to add to. A dry run never calls it anyway — that is what
+    makes the dry run a dry run.
     """
 
-    fixture_dir: Path
     supplier: str = SUPPLIER
-
-    def read_cart(self) -> Cart:
-        path = self.fixture_dir / "nar_cart.json"
-        if not path.exists():
-            raise CartUnavailable(
-                f"The saved cart '{path}' is missing, so what is already in the "
-                "cart is unknown. Nothing is reported as staged; an unreadable "
-                "cart is not an empty one."
-            )
-        body = json.loads(path.read_text(encoding="utf-8-sig"))
-        lines = tuple(
-            CartLine(
-                sku=str(item["sku"]),
-                name=str(item.get("name", "")),
-                quantity=int(item.get("qty", 0)),
-                price=_decimal(item.get("price")),
-            )
-            for item in body.get("items", [])
-        )
-        return Cart(
-            supplier=self.supplier,
-            cart_id=str(body.get("id", "fixture")),
-            lines=lines,
-            grand_total=_decimal(body.get("grand_total")),
-        )
-
-    def add_line(self, sku: str, quantity: int) -> CartLine:
-        raise CartRefusal(
-            f"This is a saved copy of the cart, not the cart. {quantity} of {sku} "
-            "was not added anywhere."
-        )
+    filename: str = "nar_cart.json"
 
 
 __all__ = [

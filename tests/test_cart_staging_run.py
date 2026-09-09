@@ -24,7 +24,7 @@ import psycopg
 import pytest
 
 from agent_org.audit.log import AuditLog
-from agent_org.broker.executors.supplier_cart import ACTION_STAGE_CART, CartStager
+from agent_org.broker.executors.supplier_cart import CartStager, stage_cart_action
 from agent_org.config.models import Capability, LoadedConfig
 from agent_org.db.connection import entity_session
 from agent_org.integrations.carts import Cart, CartLine, CartRefusal, CartUnavailable
@@ -503,7 +503,7 @@ def test_nothing_anywhere_registers_a_way_to_buy(golden_config: LoadedConfig) ->
     assert all(
         not supplier.can(Capability.PURCHASE) for supplier in golden_config.boms.suppliers.values()
     )
-    assert ACTION_STAGE_CART in golden_config.policy.rules, (
+    assert stage_cart_action("nar") in golden_config.policy.rules, (
         "live staging must be a named, tiered action rather than an unlisted default"
     )
 
@@ -533,7 +533,7 @@ def test_a_live_run_handed_a_saved_cart_refuses_rather_than_rehearsing(
 
 def _live_allowed(config: LoadedConfig) -> LoadedConfig:
     """Zach's own configuration: nar.stage_cart, and nothing else, above 0."""
-    policy = replace(config.policy, phase_exceptions={ACTION_STAGE_CART: 3})
+    policy = replace(config.policy, phase_exceptions={stage_cart_action("nar"): 3})
     return replace(config, policy=policy)
 
 

@@ -1,12 +1,17 @@
 """Staging a supplier's cart — the first executor that touches a supplier.
 
-Two actions, and the difference between them is the whole safety story:
+Two actions per supplier, and the difference between them is the whole
+safety story:
 
-* `nar.plan_cart_staging` reads the cart and writes down what would be
-  added. It is Tier 0 because it changes nothing outside this machine, and
-  it is the only one this phase can run.
-* `nar.stage_cart` adds the lines for real. Tier 2 in the rulebook, and
-  refused by the broker while `max_tier_this_phase` is 0.
+* `<supplier>.plan_cart_staging` reads the cart and writes down what would
+  be added. It is Tier 0 because it changes nothing outside this machine,
+  and it is the only one this phase can run.
+* `<supplier>.stage_cart` adds the lines for real. Tier 2 in the rulebook,
+  and refused by the broker while `max_tier_this_phase` is 0.
+
+The supplier is in the action name rather than in a payload field so that
+turning on live staging for NAR does not quietly turn it on for Dynarex
+too: a phase exception names one action, and one action is one supplier.
 
 Both require the `stage_cart` capability on the supplier, checked by the
 broker before either is reached: a supplier Zach has not said may be
@@ -14,7 +19,8 @@ staged cannot have its cart rehearsed either.
 
 Neither can check out. Not because a tier forbids it — because the client
 underneath has no method that could, and refuses the paths and the HTTP
-methods that would. See `agent_org.integrations.nar`.
+methods that would. See `agent_org.integrations.nar` and
+`agent_org.integrations.dynarex`.
 
 What is already in the cart is read first and never touched. Zach puts
 things in that cart himself; a run that tidied up after him would be a
@@ -32,8 +38,16 @@ from agent_org.broker.registry import Executor
 from agent_org.config.models import Capability
 from agent_org.integrations.carts import Cart, CartRefusal, CartUnavailable, SupplierCart
 
-ACTION_PLAN_CART_STAGING = "nar.plan_cart_staging"
-ACTION_STAGE_CART = "nar.stage_cart"
+
+def plan_cart_staging_action(supplier: str) -> str:
+    """The rehearsal action for one supplier, e.g. `dynarex.plan_cart_staging`."""
+    return f"{supplier}.plan_cart_staging"
+
+
+def stage_cart_action(supplier: str) -> str:
+    """The live action for one supplier, e.g. `dynarex.stage_cart`."""
+    return f"{supplier}.stage_cart"
+
 
 MODE_DRY_RUN = "DRY_RUN"
 MODE_LIVE = "LIVE"
@@ -271,7 +285,7 @@ def plan_cart_staging_executor(stager: CartStager) -> Executor:
     0, and why proving the plan costs nothing.
     """
     return Executor(
-        action_type=ACTION_PLAN_CART_STAGING,
+        action_type=plan_cart_staging_action(stager.supplier),
         reversible="yes",
         category="internal",
         supplier=stager.supplier,
@@ -290,7 +304,7 @@ def stage_cart_executor(stager: CartStager) -> Executor:
     twice.
     """
     return Executor(
-        action_type=ACTION_STAGE_CART,
+        action_type=stage_cart_action(stager.supplier),
         # A cart line can be taken out by hand, but not by Shannon: she has
         # no capability to remove one. 'window' is the honest word for that.
         reversible="window",
@@ -302,8 +316,6 @@ def stage_cart_executor(stager: CartStager) -> Executor:
 
 
 __all__ = [
-    "ACTION_PLAN_CART_STAGING",
-    "ACTION_STAGE_CART",
     "MODE_DRY_RUN",
     "MODE_LIVE",
     "STATUS_ADDED",

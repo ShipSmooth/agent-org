@@ -75,6 +75,15 @@ The list is empty today, so live staging is refused. An exception must
 name an action that already has a rule, and must say how far it goes;
 neither can be left out.
 
+A first live run at a supplier needs `up_to_tier: 3`, not 2. Staging is
+weighed as a purchase, and the anomaly rules escalate to Tier 3 while
+there are fewer than `min_history_orders` past live weeks to compare the
+week against — "nothing can be called normal yet". That history is
+counted from the supplier's own live weeks in `cart_stagings`, so it is
+not shared: NAR having a run behind it does nothing for Dynarex's first.
+Tier 3 here means only that Zach is deciding without a yardstick, which
+on a first run he is.
+
 ## Asking for the week again
 
 A staging slot gets three attempts, the budget that stops a process

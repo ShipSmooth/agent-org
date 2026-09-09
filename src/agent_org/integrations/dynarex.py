@@ -24,17 +24,38 @@ Two lessons from NAR are built in rather than re-learned:
   first form on the page. Every form used here is located by the field
   that identifies it.
 
+Quick Order works like this, watched by hand in the browser rather than
+inferred from markup:
+
+1. The page opens with about twenty blank rows, each already holding a
+   search box and a quantity box.
+2. Typing in a search box drops an autocomplete under it. It is the
+   contains-search again: 3161 offers 33161 and 43161 too.
+3. Clicking a suggestion is what does everything. Typing alone does
+   nothing; there is no "type and tab" path and no Add button.
+4. About two seconds later the row fills in its description, price, UOM
+   and a quantity of **1** — and the line is in the cart from that
+   moment, before any quantity has been chosen.
+5. The quantity box is then overwritten with the real quantity.
+
+Step 4 is the dangerous one, and it shapes the error handling here: an
+interruption between the click and the corrected quantity leaves the line
+in the cart at 1 rather than leaving the cart clean. Every failure after
+the click therefore says what the cart now holds and asks Zach to correct
+it by hand — Shannon can read a cart and add to one, and cannot take a
+line out of either.
+
 Where the portal's markup is not known — the signed-in cart's rows, the
-Quick Order row — this client discovers it and *refuses* when it cannot,
-quoting what it actually found. A cart that cannot be read is unknown,
-never empty, and a Quick Order page that does not look like one is not a
-page to start typing into.
+Quick Order row, the autocomplete — this client discovers it and
+*refuses* when it cannot, quoting what it actually found. A cart that
+cannot be read is unknown, never empty, and a Quick Order page that does
+not look like one is not a page to start typing into.
 
 Never checking out is enforced the same three ways as NAR, none of them a
 setting: `ALLOWED_PATHS` is a closed set, `FORBIDDEN` catches a checkout
-path added to it by a later edit, and no button whose text offers to place
-or pay for an order is ever clicked — the click is refused even if the
-portal puts one inside the Quick Order form.
+path added to it by a later edit, and nothing whose text offers to place
+or pay for an order is ever clicked — which on this page means the
+"Proceed to Checkout" button sitting beside the running sub-total.
 
 There is no credential in this file. `DYNAREX_EMAIL` and
 `DYNAREX_PASSWORD` are read from the environment under the entity's own
@@ -88,18 +109,15 @@ FORBIDDEN = re.compile(
     re.IGNORECASE,
 )
 
-# The same words on a button. Quick Order's own button says "Add to Cart";
-# anything offering to complete the purchase is not clicked, wherever the
-# portal has chosen to put it.
+# The same words on anything clickable. The Quick Order page carries
+# "Proceed to Checkout" and a running sub-total; the only thing Shannon
+# clicks there is an autocomplete suggestion, and it is checked against
+# this first — a suggestion is not a button, but the rule is about what
+# the click might do, not about the tag it is on.
 BUYING_BUTTON = re.compile(
     r"check\s*out|place\s*(the\s*)?order|submit\s*order|pay\b|paypal|purchase|buy\s*now",
     re.IGNORECASE,
 )
-
-# The button that puts the row in the cart, by what it says. Anything the
-# portal has not labelled as adding — Clear, Remove, Save, Upload — is
-# left alone rather than clicked to see what it does.
-ADDING_BUTTON = re.compile(r"add\b|add\s*to\s*cart|update\s*cart|submit\b", re.IGNORECASE)
 
 EMAIL_VAR = "DYNAREX_EMAIL"
 PASSWORD_VAR = "DYNAREX_PASSWORD"
@@ -108,6 +126,8 @@ EMPTY_CART = re.compile(r"cart is (currently )?empty", re.IGNORECASE)
 CODE_IN_TEXT = re.compile(
     r"(?:code|item(?:\s*#)?|sku)\s*[:#]\s*([A-Za-z0-9][\w.-]*)", re.IGNORECASE
 )
+# How the autocomplete writes a part number: "Krinkle Gauze Roll (3161)".
+SUGGESTED_CODE = re.compile(r"\(([A-Za-z0-9][\w.-]*)\)\s*$")
 GRAND_TOTAL = re.compile(r"(?:grand\s+total|order\s+total|total)\D{0,20}\$\s*([\d,]+\.\d{2})", re.I)
 SIGNED_IN = re.compile(r"sign\s*out|log\s*out|my account", re.IGNORECASE)
 
@@ -199,44 +219,68 @@ QUICK_ORDER_PRELUDE = """
   };
 """
 
-# The part-number box, wanted three ways in order of how much the page
-# has said about it: called a code, or sitting beside a quantity, or the
-# one box on the page that is not the site's search. The third is not a
-# guess so much as the absence of an alternative — and it is only taken
-# when there is exactly one, so it can never pick the wrong box.
-QUICK_ORDER_SKU_JS = (
+# A blank row: a search box with nothing typed in it and a quantity box
+# beside it. Both are there from page load — the page opens with about
+# twenty of these — so a row is a pair, and a box with no quantity beside
+# it is not a row however it is named.
+QUICK_ORDER_ROW_JS = (
     """() => {"""
     + QUICK_ORDER_PRELUDE
     + """
   const empty = boxes().filter(field => !field.value);
-  const ways = [
-    ['it is named for a part number', empty.find(box => CODEISH.test(described(box)))],
-    ['it has a quantity beside it', empty.find(box => beside(box, QTY))],
-    ['it is the only box on the page', empty.length === 1 ? empty[0] : null],
-  ];
-  const chosen = ways.find(way => way[1]);
-  if (!chosen) return null;
-  const field = chosen[1];
-  field.setAttribute('data-shannon-sku', '1');
-  return {sku_field: named(field).trim() || '(unnamed)', found_because: chosen[0]};
+  const named_first = empty.filter(box => CODEISH.test(described(box)))
+      .concat(empty);
+  for (const box of named_first) {
+    const qty = beside(box, QTY);
+    if (!qty) continue;
+    box.setAttribute('data-shannon-sku', '1');
+    qty.setAttribute('data-shannon-qty', '1');
+    return {sku_field: named(box).trim() || '(unnamed)',
+            qty_field: named(qty).trim() || '(unnamed)',
+            blank_rows: empty.length};
+  }
+  return null;
 }"""
 )
 
-# The quantity, looked for only once the part number is in the box: the
-# live page fills a row in by AJAX as the code is typed, so a quantity
-# that is not there at first is not a quantity that is not there.
-QUICK_ORDER_QTY_JS = (
-    """() => {"""
+# The autocomplete the portal drops under the row as the code is typed.
+# Its markup is not known from outside the login, so anything visible,
+# short, leaf-shaped and carrying the typed digits is collected and
+# Python decides which — if any — is the part itself.
+SUGGESTIONS_JS = (
+    """(wanted) => {"""
     + QUICK_ORDER_PRELUDE
     + """
-  const field = document.querySelector('[data-shannon-sku]');
-  if (!field) return null;
-  const qty = beside(field, QTY);
-  if (!qty) return null;
-  qty.setAttribute('data-shannon-qty', '1');
-  return {qty_field: named(qty).trim() || '(unnamed)'};
+  const box = document.querySelector('[data-shannon-sku]');
+  if (!box) return [];
+  const LIST = "li, [role=option], [class*='autocomplete' i] *, " +
+               "[class*='suggest' i] *, [class*='typeahead' i] *, " +
+               "[class*='dropdown' i] *, [class*='result' i] *";
+  const options = [...document.querySelectorAll(LIST)]
+      .filter(shown)
+      .filter(node => !node.contains(box) && node !== box)
+      .filter(node => !node.querySelector(LIST))
+      .filter(node => !node.querySelector('input'))
+      .map(node => [node, (node.innerText || '').replace(/\\s+/g, ' ').trim()])
+      .filter(pair => pair[1].length > 2 && pair[1].length < 200)
+      .filter(pair => pair[1].toLowerCase().includes(wanted.toLowerCase()));
+  return options.slice(0, 40).map((pair, index) => {
+    pair[0].setAttribute('data-shannon-option', String(index));
+    return {index: index, text: pair[1]};
+  });
 }"""
 )
+
+# Whether the portal has answered the click yet: the row fills its own
+# description, price and quantity in about two seconds, and the line is
+# in the cart from that moment.
+ROW_FILLED_JS = """() => {
+  const qty = document.querySelector('[data-shannon-qty]');
+  if (!qty || !String(qty.value).trim()) return null;
+  const row = qty.closest('tr, [class*=row i], div');
+  return {quantity: String(qty.value).trim(),
+          row: ((row || qty).innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 200)};
+}"""
 
 # What is actually on the page, for a refusal to quote. Forms alone were
 # not enough: the live page answered with its two search forms and nothing
@@ -312,6 +356,24 @@ def _name_in(text: str, sku: str) -> str:
     before = text.split(sku)[0]
     cleaned = re.sub(r"(?:code|item(?:\s*#)?|sku)\s*[:#]\s*$", "", before, flags=re.IGNORECASE)
     return cleaned.strip(" -|·").strip()[:120]
+
+
+def exact_suggestion(sku: str, options: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The dropdown entry that *is* this part, out of everything offered.
+
+    The Quick Order autocomplete is the contains-search again, in a
+    smaller box: typing 3161 offers 33161 and 43161 too, and clicking one
+    of those puts the wrong product in the cart with no further warning.
+    A suggestion counts only if the code it carries — in a `(3161)` suffix
+    or after a `Code:` — is the part itself.
+    """
+    for option in options:
+        text = str(option.get("text", ""))
+        suffix = SUGGESTED_CODE.search(text)
+        codes = ([suffix.group(1)] if suffix else []) + CODE_IN_TEXT.findall(text)
+        if sku in codes:
+            return option
+    return None
 
 
 def exact_code(sku: str, results: list[str]) -> str | None:
@@ -391,8 +453,11 @@ class DynarexPortalCart:
             held_before = self._read(page).quantity_of(sku)
             self._open(page, QUICK_ORDER_PATH)
             self._quick_order_row(page, sku)
-            page.locator("[data-shannon-qty]").first.fill(str(quantity))
-            self._submit(page)
+            # Everything from here on can leave the line in the cart at the
+            # portal's default of 1, so a failure has to say so rather than
+            # read as "nothing was added".
+            self._choose(page, sku)
+            self._set_quantity(page, quantity)
             landed = self._read(page)
 
         held_after = landed.quantity_of(sku)
@@ -400,7 +465,7 @@ class DynarexPortalCart:
             raise CartUnavailable(
                 f"{quantity} of {sku} was entered on Quick Order and the cart "
                 f"afterwards holds {held_after} of it where {held_before + quantity} "
-                "was expected. Check the cart on dynarex.com before ordering anything."
+                f"was expected. {self._by_hand(sku, held_after, held_before + quantity)}"
             )
         for line in landed.lines:
             if line.sku == sku:
@@ -412,42 +477,88 @@ class DynarexPortalCart:
         )
 
     def _quick_order_row(self, page: Page, sku: str) -> None:
-        """Put the part number in the row's box, and find its quantity.
+        """Take a blank row: an empty search box with a quantity beside it.
 
-        In two steps rather than one because the row is only half there
-        when the page arrives: the box is typed into, the portal answers
-        by AJAX, and the rest of the row — the quantity among it — comes
-        back with that answer. A scan that ran once, the moment
-        domcontentloaded fired, saw the first half and called the page
-        empty of Quick Order rows.
+        Nothing is typed here, so nothing can land in the cart yet. The
+        page opens with about twenty blank rows and both boxes of each are
+        there from the start, so a search box with no quantity anywhere
+        near it is some other box and is left alone.
         """
-        found = self._wait_for(page, QUICK_ORDER_SKU_JS)
-        if found is None:
+        if self._wait_for(page, QUICK_ORDER_ROW_JS) is None:
             raise CartUnavailable(
-                f"Nothing on {QUICK_ORDER_PATH} looks like a Quick Order row — no "
-                "empty part-number box, named as one or with a quantity beside it. "
-                f"Nothing was added. The page holds these fields: {page.evaluate(FIELDS_JS)} "
-                f"and these forms: {page.evaluate(FORMS_JS)}"
+                f"No blank Quick Order row on {QUICK_ORDER_PATH} — no empty search "
+                f"box with a quantity beside it, after {self.settle_ms // 1000}s. "
+                f"{sku} was not typed and nothing was added. The page holds these "
+                f"fields: {page.evaluate(FIELDS_JS)} and these forms: "
+                f"{page.evaluate(FORMS_JS)}"
             )
-        # Typed rather than filled: the portal hangs its lookup off the
-        # keystrokes, and a value set in one go arrives at a page that
-        # never asked what the part number was.
+
+    def _choose(self, page: Page, sku: str) -> None:
+        """Type the part number and click the suggestion that *is* the part.
+
+        Typing alone does nothing on this page: the row is filled in by
+        clicking an entry in the autocomplete, and the portal puts the
+        line in the cart at quantity 1 the moment that entry is clicked.
+        So the click is the committing act, and it is only made against a
+        suggestion whose own code is the SKU — the dropdown offers 33161
+        and 43161 to someone typing 3161, and they are real products.
+        """
         box = page.locator("[data-shannon-sku]").first
         box.click()
         box.press_sequentially(sku, delay=60, timeout=self.timeout_ms)
-        if self._wait_for(page, QUICK_ORDER_QTY_JS) is None:
-            raise CartUnavailable(
-                f"The part-number box on {QUICK_ORDER_PATH} took {sku} (into "
-                f"'{found['sku_field']}') and no quantity appeared beside it within "
-                f"{self.settle_ms // 1000}s. Nothing was added. The page holds these "
-                f"fields: {page.evaluate(FIELDS_JS)}"
+
+        offered: list[dict[str, Any]] = []
+        deadline = monotonic() + self.settle_ms / 1000
+        while True:
+            offered = [dict(option) for option in page.evaluate(SUGGESTIONS_JS, sku)]
+            wanted = exact_suggestion(sku, offered)
+            if wanted is not None:
+                break
+            if monotonic() >= deadline:
+                raise CartUnavailable(
+                    f"The Quick Order autocomplete never offered {sku} itself within "
+                    f"{self.settle_ms // 1000}s of it being typed. Nothing was clicked "
+                    "and nothing was added — a line only goes in when a suggestion is "
+                    f"clicked. It offered: {[option['text'] for option in offered][:10]}"
+                )
+            page.wait_for_timeout(250)
+
+        if BUYING_BUTTON.search(str(wanted["text"])):
+            raise CartRefusal(
+                f"The Quick Order entry offered for {sku} reads "
+                f"'{wanted['text'][:80]}', which offers to check out or pay rather "
+                "than to name a product. It was not clicked and nothing was added."
             )
+        page.locator(f"[data-shannon-option='{wanted['index']}']").first.click()
+        # The portal takes a couple of seconds to answer the click with the
+        # description, price and a quantity of 1. The line is in the cart
+        # from that answer, not from the button that does not exist.
+        if self._wait_for(page, ROW_FILLED_JS) is None:
+            raise CartUnavailable(
+                f"{sku} was chosen from the Quick Order dropdown and the row never "
+                f"filled itself in within {self.settle_ms // 1000}s. The portal adds "
+                "the line the moment a suggestion is clicked, so the cart may now hold "
+                f"1 of {sku}. {self._by_hand(sku, None, None)}"
+            )
+
+    def _set_quantity(self, page: Page, quantity: int) -> None:
+        """Correct the quantity the portal defaulted to 1.
+
+        There is no Add button to press: the line is already in the cart,
+        and this edits it. The box is left with a change event and a Tab,
+        because the portal updates the cart off the field losing focus.
+        """
+        qty = page.locator("[data-shannon-qty]").first
+        qty.click()
+        qty.fill(str(quantity))
+        qty.press("Tab")
+        page.wait_for_timeout(1_000)
 
     def _wait_for(self, page: Page, script: str) -> dict[str, Any] | None:
         """Run a scan until it finds something, or until time is up.
 
-        The portal renders a Quick Order row in its own time, so a scan
-        is a question asked repeatedly rather than once.
+        The portal answers in its own time, so a scan is a question asked
+        repeatedly rather than once.
         """
         deadline = monotonic() + self.settle_ms / 1000
         while True:
@@ -458,38 +569,24 @@ class DynarexPortalCart:
                 return None
             page.wait_for_timeout(250)
 
-    def _submit(self, page: Page) -> None:
-        """Click the button that adds the row, and nothing that buys it.
+    def _by_hand(self, sku: str, holding: int | None, wanted: int | None) -> str:
+        """What Zach has to do about a half-finished line, in one sentence.
 
-        The form is only the first place looked, not the only one: a row
-        on the live page need not be inside a form at all — the portal
-        adds by AJAX, and a page whose only forms are its two search
-        boxes still has an Add button in the row. So the row itself, and
-        then the page, are searched after it.
+        Shannon cannot take a line out of a Dynarex cart — she can read one
+        and add to one, and that is the whole of her authority here. The
+        thing she owes him instead is an exact statement of what is in the
+        cart, because this page adds at quantity 1 before the quantity is
+        corrected: an interruption leaves the line there and wrong, not
+        absent, and "the add failed" would be read as "the cart is clean".
         """
-        row = page.locator("[data-shannon-sku]").locator(
-            "xpath=ancestor::*[.//*[@data-shannon-qty]][1]"
+        held = "an unknown quantity" if holding is None else str(holding)
+        expected = "" if wanted is None else f" (it should be {wanted})"
+        return (
+            f"The dynarex.com cart now holds {held} of {sku}{expected}. Shannon does "
+            "not remove or edit cart lines, so correct it by hand on "
+            f"{self.base_url}{CART_PATH} before ordering anything. Nothing has been "
+            "checked out."
         )
-        form = page.locator("form:has([data-shannon-sku])").first
-        for scope in (form, row, page.locator("body")):
-            if not scope.count():
-                continue
-            buttons = scope.locator("button, input[type=submit], input[type=button]")
-            for index in range(buttons.count()):
-                button = buttons.nth(index)
-                label = (button.inner_text() or button.get_attribute("value") or "").strip()
-                if BUYING_BUTTON.search(label):
-                    # Not a refusal of the whole run: the portal is allowed
-                    # to put a checkout button on the page. It is a refusal
-                    # to be the thing that clicks it.
-                    continue
-                if not ADDING_BUTTON.search(label):
-                    continue
-                button.click()
-                page.wait_for_load_state("domcontentloaded", timeout=self.timeout_ms)
-                return
-        page.locator("[data-shannon-qty]").first.press("Enter")
-        page.wait_for_load_state("domcontentloaded", timeout=self.timeout_ms)
 
     def _confirm(self, page: Page, sku: str) -> str:
         """What dynarex.com calls this part, or a refusal to add it at all."""

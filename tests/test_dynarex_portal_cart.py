@@ -7,16 +7,23 @@ login page carries the search box twice before the login, the search is a
 *contains* search that answers 3161 with 33161 and 43161 as well, and
 Quick Order is a part-number box with a quantity beside it.
 
-The Quick Order page below is shaped like the live one rather than like a
-form: the row is an `rTable` of `rTableCell` divs and not a `<table>`, the
-part-number box sits in a cell whose own class is `search-box`, the
-quantity arrives only once a code has been typed, and none of it is
-inside a `<form>` — which is why the first live run described the page as
-holding nothing but its two search forms, and added nothing.
+The Quick Order page below is shaped like the live one, watched by hand
+in the browser after two rounds of guessing at it from markup:
 
-Nothing here touches dynarex.com, and the portal below has a Checkout
-button on the Quick Order page on purpose — the one button Shannon must
-walk past.
+* twenty blank rows, each with its search box and its quantity box there
+  from page load — neither is injected later;
+* typing drops an autocomplete under the row, and it is the contains
+  search again: 3161 offers 33161 and 43161 as well;
+* **typing alone does nothing**. Clicking a suggestion is what acts, and
+  the line is in the cart at quantity 1 from that click, before any
+  quantity has been chosen — so the tests below can leave the cart
+  holding 1 of a part, and one of them does, on purpose;
+* the quantity box is then overwritten, which edits the line that is
+  already there. There is no Add button anywhere on the page.
+
+Nothing here touches dynarex.com, and the portal below carries "Add Row",
+"View Cart" and "Proceed to Checkout" on purpose — the buttons Shannon
+walks past, none of which she may click.
 """
 
 from __future__ import annotations
@@ -24,6 +31,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from json import dumps
 from pathlib import Path
 from threading import Thread
 from typing import Any, ClassVar
@@ -39,6 +47,7 @@ from agent_org.integrations.dynarex import (
     DynarexPortalCart,
     credentials,
     exact_code,
+    exact_suggestion,
     refuse_unless_safe,
 )
 
@@ -48,6 +57,8 @@ EMAIL = "zach@example.test"
 CATALOGUE = {
     "3161": ("Krinkle Gauze Roll - Sterile", "12.34"),
     "3553": ("Sterile Gauze Pad", "8.10"),
+    "33161": ("Nasal Oxygen Cannula", "5.00"),
+    "43161": ("Suction Tubing Loop", "7.25"),
 }
 # What the portal's contains-search answers 3161 with, in its own order:
 # the part itself is not first, and two of these are real other products.
@@ -64,32 +75,65 @@ SEARCH_FORM = """
 </form>
 """
 
-# The live Quick Order page answers a typed part number over AJAX and only
-# then has a quantity to fill in, and its buttons post by script rather
-# than by belonging to a form. Both are copied here, since both are what
-# the first live run's scan was too early and too literal to see.
+# The live page's behaviour, copied rather than guessed at: a dropdown
+# after a pause, a click that both fills the row in and puts the line in
+# the cart at 1, and a quantity box that edits that line afterwards.
+# Everything posts by script; nothing on the page is a form.
 QUICK_ORDER_SCRIPT = """
-const code = document.querySelector('.qo-box');
-code.addEventListener('input', () => {
-  if (code.value.length < 3 || document.querySelector('#qty')) return;
-  setTimeout(() => {
-    document.querySelector('.qty-cell').innerHTML =
-        "<input id='qty' name='qty' value=''>";
-  }, 300);
-});
-const send = which => {
-  const qty = document.querySelector('#qty');
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = '/cart/quickorders';
-  form.innerHTML = "<input name='item_code' value='" + code.value + "'>" +
-      "<input name='qty' value='" + (qty ? qty.value : '') + "'>" +
-      "<input name='" + which + "' value='1'>";
-  document.body.appendChild(form);
-  form.submit();
+const NAMES = %(names)s;
+const OFFERS = %(offers)s;
+const FILLS_ROW = %(fills_row)s;
+
+const send = (which, code, delta) => {
+  const body = new URLSearchParams(
+      {which: which, item_code: code, delta: String(delta)});
+  fetch('/cart/quickorders', {method: 'POST', body: body});
 };
-document.querySelector('#add').addEventListener('click', () => send('add'));
-document.querySelector('#co').addEventListener('click', () => send('checkout'));
+
+const choose = (row, code) => {
+  // Two seconds on the real portal; the line is in the cart from here,
+  // whatever happens to the rest of the row afterwards.
+  setTimeout(() => {
+    send('select', code, 1);
+    if (!FILLS_ROW) return;
+    row.dataset.code = code;
+    row.dataset.sent = '1';
+    row.querySelector('.desc').textContent = NAMES[code] + ' (' + code + ')';
+    row.querySelector('.price').textContent = '$1.00 / CS';
+    row.querySelector('.qty').value = '1';
+    row.querySelector('.qo-suggest').innerHTML = '';
+  }, 400);
+};
+
+for (const row of document.querySelectorAll('.rTableRow')) {
+  const box = row.querySelector('.qo-box');
+  const list = row.querySelector('.qo-suggest');
+  const qty = row.querySelector('.qty');
+  box.addEventListener('input', () => {
+    list.innerHTML = '';
+    const typed = box.value.trim();
+    if (typed.length < 3) return;
+    setTimeout(() => {
+      for (const code of (OFFERS[typed] || [])) {
+        const item = document.createElement('li');
+        item.textContent = NAMES[code] + ' (' + code + ')';
+        item.addEventListener('click', () => choose(row, code));
+        list.appendChild(item);
+      }
+    }, 200);
+  });
+  qty.addEventListener('change', () => {
+    if (!row.dataset.code) return;
+    send('qty', row.dataset.code, Number(qty.value) - Number(row.dataset.sent));
+    row.dataset.sent = qty.value;
+  });
+}
+
+for (const [id, which] of [['addrow', 'add row'], ['viewcart', 'view cart'],
+                           ['co', 'checkout']]) {
+  document.getElementById(id).addEventListener(
+      'click', () => send(which, '-', 0));
+}
 """
 
 
@@ -111,6 +155,10 @@ class _Portal(BaseHTTPRequestHandler):
     clicked: ClassVar[list[str]] = []
     captcha: ClassVar[bool] = False
     quick_order_row: ClassVar[bool] = True
+    # Whether the autocomplete offers the part itself, or only its
+    # neighbours, and whether the row answers a click at all.
+    offers_the_part: ClassVar[bool] = True
+    fills_row: ClassVar[bool] = True
 
     def _send(self, body: str) -> None:
         self.send_response(200)
@@ -133,23 +181,35 @@ class _Portal(BaseHTTPRequestHandler):
         )
 
     def _quick_order_page(self) -> str:
-        """The live page's shape: cells rather than a table, no form, and
-        a quantity that only exists once a part number has been typed."""
-        return f"""<html><body class="quick-orders-page">Sign Out
-{SEARCH_FORM}
-<div class="rTable"><div class="rTableRow">
+        """Twenty blank rows, both boxes of each there from the start."""
+        row = """<div class="rTableRow">
   <div class="rTableCell search-box">
     <input type="text" class="qo-box" autocomplete="off">
-    <button class="search-btn-quickorder">Search</button>
+    <span class="mag">&#128269;</span>
+    <ul class="qo-suggest"></ul>
   </div>
-  <div class="rTableCell qty-cell"></div>
-  <div class="rTableCell">
-    <button id="co">Checkout</button>
-    <button id="add">Add to Cart</button>
-  </div>
-</div></div>
+  <div class="rTableCell desc"></div>
+  <div class="rTableCell price"></div>
+  <div class="rTableCell qty-cell"><input class="qty" name="qty" value=""></div>
+</div>"""
+        offers = {
+            typed: [code for code in codes if code != typed or self.offers_the_part]
+            for typed, codes in NEIGHBOURS.items()
+        }
+        script = QUICK_ORDER_SCRIPT % {
+            "names": dumps({code: name for code, (name, _) in CATALOGUE.items()}),
+            "offers": dumps(offers),
+            "fills_row": "true" if self.fills_row else "false",
+        }
+        return f"""<html><body class="quick-orders-page">Sign Out
+{SEARCH_FORM}
+<div class="rTable">{row * 20}</div>
+<p>Sub-Total: $0.00</p>
+<button id="addrow">Add Row</button>
+<button id="viewcart">View Cart</button>
+<button id="co">Proceed to Checkout</button>
 <script>
-{QUICK_ORDER_SCRIPT}
+{script}
 </script>
 </body></html>"""
 
@@ -185,10 +245,14 @@ class _Portal(BaseHTTPRequestHandler):
         form = parse_qs(self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode())
         path = urlparse(self.path).path.rstrip("/")
         if path == "/cart/quickorders":
-            self.clicked.append("checkout" if "checkout" in form else "add")
-            sku = form.get("item_code", [""])[0]
-            self.cart[sku] = self.cart.get(sku, 0) + int(form.get("qty", ["0"])[0])
-            self._send(self._cart_page())
+            which, sku = form.get("which", [""])[0], form.get("item_code", [""])[0]
+            self.clicked.append(f"{which} {sku}".strip())
+            held = self.cart.get(sku, 0) + int(form.get("delta", ["0"])[0])
+            if held:
+                self.cart[sku] = held
+            else:
+                self.cart.pop(sku, None)
+            self._send("ok")
             return
         if form.get("login_password", [""])[0] == PASSWORD:
             self._send("<html><body>My Account — Sign Out</body></html>")
@@ -205,6 +269,8 @@ def portal() -> Iterator[str]:
     _Portal.clicked = []
     _Portal.captcha = False
     _Portal.quick_order_row = True
+    _Portal.offers_the_part = True
+    _Portal.fills_row = True
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Portal)
     Thread(target=server.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{server.server_port}"
@@ -255,13 +321,57 @@ def test_a_line_goes_in_through_quick_order_and_is_read_back_out(
     assert _Portal.cart == {"3553": 2, "3161": 5}, "what was already there stays there"
 
 
-def test_the_checkout_button_on_the_quick_order_page_is_never_the_one_clicked(
+def test_the_line_lands_at_one_on_selection_and_the_quantity_is_a_second_act(
     cart: DynarexPortalCart,
 ) -> None:
-    """The portal is allowed to offer checkout; Shannon may not take it."""
+    """The order of events matters, because a failure between the two
+    leaves a real line in a real cart at the wrong quantity."""
+    cart.add_line("3161", 5)
+
+    assert _Portal.clicked == ["select 3161", "qty 3161"]
+
+
+def test_nothing_on_the_page_that_offers_to_buy_is_ever_clicked(
+    cart: DynarexPortalCart,
+) -> None:
+    """Add Row, View Cart and Proceed to Checkout are all on the page.
+    Only a dropdown suggestion and a quantity box are touched."""
     cart.add_line("3161", 1)
 
-    assert _Portal.clicked == ["add"]
+    # One of one: the selection is the whole add, and rewriting the
+    # quantity box with the 1 already in it changes nothing.
+    assert _Portal.clicked == ["select 3161"]
+
+
+def test_a_dropdown_that_only_offers_the_neighbours_is_left_unclicked(
+    cart: DynarexPortalCart,
+) -> None:
+    """Typing does nothing on this page, so refusing to click is enough:
+    33161 and 43161 are real products, and neither of them is 3161."""
+    _Portal.offers_the_part = False
+
+    with pytest.raises(CartUnavailable, match="never offered 3161 itself") as refused:
+        cart.add_line("3161", 2)
+
+    assert "33161" in str(refused.value), "the refusal quotes what it was offered instead"
+    assert _Portal.cart == {}
+    assert _Portal.clicked == [], "typing alone adds nothing, so nothing was added"
+
+
+def test_a_row_that_never_fills_itself_in_says_the_line_may_be_there_at_one(
+    cart: DynarexPortalCart,
+) -> None:
+    """The click is the committing act. If the portal stops answering after
+    it, the cart is not clean, and saying "nothing was added" would be a
+    lie Zach would act on."""
+    _Portal.fills_row = False
+
+    with pytest.raises(CartUnavailable, match="may now hold 1 of 3161") as refused:
+        cart.add_line("3161", 4)
+
+    assert "correct it by hand" in str(refused.value)
+    assert "Nothing has been checked out" in str(refused.value)
+    assert _Portal.cart == {"3161": 1}, "which is exactly what the refusal warns about"
 
 
 def test_the_search_box_is_never_mistaken_for_the_part_number_box(
@@ -283,7 +393,7 @@ def test_a_quick_order_page_with_no_row_says_what_it_did_hold_instead(
     with pytest.raises(CartUnavailable, match="holds these fields") as refused:
         cart.add_line("3161", 1)
 
-    assert "Nothing was added" in str(refused.value)
+    assert "was not typed and nothing was added" in str(refused.value)
     assert _Portal.cart == {}
 
 
@@ -297,19 +407,20 @@ def test_a_part_the_portal_only_answers_with_its_neighbours_is_refused(
     assert _Portal.cart == {}
 
 
-def test_a_cart_that_does_not_hold_what_went_in_is_a_failure_not_a_success(
+def test_a_line_left_at_one_by_a_lost_quantity_is_reported_as_exactly_that(
     cart: DynarexPortalCart, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verification is the whole point: a portal that quietly doubled a
-    line would otherwise be reported to Zach as a clean add."""
-    monkeypatch.setattr(
-        DynarexPortalCart,
-        "_submit",
-        lambda self, page: _Portal.cart.update({"3161": 11}),
-    )
+    """The failure this page makes possible: the quantity edit never
+    happens, so the cart holds 1 rather than nothing. "Line exists but
+    wrong quantity" has to read differently from "line absent"."""
+    monkeypatch.setattr(DynarexPortalCart, "_set_quantity", lambda self, page, quantity: None)
 
-    with pytest.raises(CartUnavailable, match="holds 11 of it where 3 was expected"):
-        cart.add_line("3161", 3)
+    with pytest.raises(CartUnavailable, match="holds 1 of it where 5 was expected") as refused:
+        cart.add_line("3161", 5)
+
+    assert "cart now holds 1 of 3161 (it should be 5)" in str(refused.value)
+    assert "correct it by hand" in str(refused.value)
+    assert _Portal.cart == {"3161": 1}
 
 
 def test_a_login_the_portal_refuses_says_so_in_the_portals_words(
@@ -369,6 +480,20 @@ def test_an_exact_code_is_the_part_itself_and_nothing_else() -> None:
 
     assert exact_code("3161", results) == "Krinkle Gauze Code: 3161"
     assert exact_code("316", results) is None
+
+
+def test_a_suggestion_counts_only_when_the_code_in_it_is_the_part() -> None:
+    """How the dropdown writes a code: a suffix in brackets."""
+    offered = [
+        {"index": 0, "text": "Nasal Oxygen Cannula (33161)"},
+        {"index": 1, "text": "Krinkle Gauze Roll - Sterile (3161)"},
+        {"index": 2, "text": "Suction Tubing Loop (43161)"},
+    ]
+
+    assert exact_suggestion("3161", offered) == offered[1]
+    assert exact_suggestion("316", offered) is None
+    assert exact_suggestion("3161", [{"index": 0, "text": "3161 pieces in a case (3553)"}]) is None
+    assert exact_suggestion("3161", [{"index": 7, "text": "Gauze Code: 3161"}]) is not None
 
 
 def test_the_saved_dynarex_cart_reads_but_refuses_to_be_added_to(tmp_path: Path) -> None:

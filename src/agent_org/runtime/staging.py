@@ -189,6 +189,16 @@ def stage_supplier_cart(
     make a staged cart look unstaged.
     """
     supplier_cart = cart or supplier_cart_for(supplier, fixtures, config)
+    if supplier_cart.supplier != supplier:
+        # Until #27 this could not be checked, because there was one cart
+        # for every supplier: `--supplier dynarex` planned Dynarex's lines
+        # and read NAR's cart, and the report said so without knowing it.
+        # Now the cart has to answer to the name it was asked for.
+        raise CartRefusal(
+            f"A {supplier} run was given the {supplier_cart.supplier} cart to read. "
+            "Nothing was read and nothing was staged: a report of one supplier's "
+            "cart under another supplier's name is worse than no report."
+        )
     if not dry_run and isinstance(supplier_cart, SavedCartCopy):
         # Before the task is claimed: a live run that reads a saved cart
         # would report every line as refused, and those refusals would read

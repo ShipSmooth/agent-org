@@ -60,6 +60,7 @@ STATUS_SKIPPED = "SKIPPED"
 
 def _cart_as_dict(cart: Cart) -> dict[str, Any]:
     return {
+        "supplier": cart.supplier,
         "cart_id": cart.cart_id,
         "currency": cart.currency,
         "grand_total": None if cart.grand_total is None else str(cart.grand_total),
@@ -102,14 +103,17 @@ class CartStager:
         lines = list(payload.get("lines", []))
 
         before = self.cart.read_cart()
+        self._is_ours(before)
         already = self._already_staged(slot)
 
         results: list[dict[str, Any]] = []
         for line in lines:
             results.append(self._one_line(task_id, slot, line, already, before))
 
-        after = before if self.dry_run else self.cart.read_cart()
+        after = before
         if not self.dry_run:
+            after = self.cart.read_cart()
+            self._is_ours(after)
             self._verify(results, before, after)
         return {
             "supplier": self.supplier,
@@ -122,6 +126,19 @@ class CartStager:
             "paid": False,
             "ordered": False,
         }
+
+    def _is_ours(self, cart: Cart) -> None:
+        """The cart that was read has to be this supplier's cart.
+
+        A cart read from the wrong supplier looks like a perfectly ordinary
+        cart: lines, quantities, a total. Nothing further down can tell it
+        apart, so it is caught here, where the name is still known.
+        """
+        if cart.supplier != self.supplier:
+            raise CartUnavailable(
+                f"A {self.supplier} run read the {cart.supplier} cart. Nothing was "
+                f"staged, and what is in the {self.supplier} cart is unknown."
+            )
 
     def _verify(self, results: list[dict[str, Any]], before: Cart, after: Cart) -> None:
         """Check the cart itself, not the replies that said it worked.

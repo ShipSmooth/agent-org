@@ -168,3 +168,56 @@ def test_the_rehearsal_and_the_real_thing_are_different_actions_per_supplier(
 
     only_nar = replace(golden_config.policy, phase_exceptions={"nar.stage_cart": 3})
     assert "dynarex.stage_cart" not in only_nar.phase_exceptions
+
+
+def test_a_dynarex_run_handed_nars_cart_refuses_before_it_reads_anything(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    """The shape of the bug Zach found: Dynarex's lines, NAR's cart.
+
+    Before the per-supplier carts existed there was one cart for every
+    supplier, so a Dynarex dry run planned Dynarex lines and then read and
+    reported the NAR cart underneath them. A cart that answers to another
+    supplier's name is now refused rather than described.
+    """
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        with pytest.raises(CartRefusal, match="given the nar cart"):
+            stage_supplier_cart(
+                conn=conn,
+                config=golden_config,
+                supplier="dynarex",
+                output_dir=tmp_path,
+                dry_run=True,
+                week=WEEK,
+                now=MONDAY,
+                cart=NarFixtureCart(fixture_dir=DATA),
+            )
+
+
+def test_the_report_names_the_cart_it_actually_read(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    """Reading the wrong cart was invisible on the page it was printed on."""
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        summary = stage_supplier_cart(
+            conn=conn,
+            config=golden_config,
+            supplier="dynarex",
+            output_dir=tmp_path,
+            fixtures=DATA,
+            dry_run=True,
+            week=WEEK,
+            now=MONDAY,
+        )
+
+    body = Path(summary.report_path or "").read_text(encoding="utf-8")
+    assert "read from the dynarex cart" in body
+    assert "30-0002" not in body, "NAR's cart has no business in a Dynarex report"

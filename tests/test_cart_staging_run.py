@@ -596,3 +596,26 @@ def test_asking_again_does_not_put_a_staged_line_in_the_cart_twice(
         )
     assert first.error is None and again.error is None
     assert cart.added == added_first_time, "a second ask must not re-add a staged line"
+
+
+@dataclass
+class CartOfAnotherSupplier(RecordingCart):
+    """A client that answers to one name and returns another's cart."""
+
+    def read_cart(self) -> Cart:
+        return Cart(supplier="dynarex", cart_id="/cart", lines=())
+
+
+def test_a_stager_that_reads_another_suppliers_cart_stages_nothing(
+    app_conn: psycopg.Connection[tuple[object, ...]],
+    entity_id: str,
+    golden_config: LoadedConfig,
+    tmp_path: Path,
+) -> None:
+    """An unrecognised cart is unknown, never empty and never described."""
+    with entity_session(app_conn, entity_id) as conn:
+        _week(conn, golden_config, tmp_path)
+        cart = CartOfAnotherSupplier()
+        with pytest.raises(CartUnavailable, match="A nar run read the dynarex cart"):
+            _live_stage(conn, entity_id, cart)
+        assert cart.added == []

@@ -30,14 +30,22 @@ from agent_org.broker.executors.internal_report import (
     build_registry,
 )
 from agent_org.broker.executors.supplier_cart import (
-    ACTION_PLAN_CART_STAGING,
-    ACTION_STAGE_CART,
     CartStager,
+    plan_cart_staging_action,
     plan_cart_staging_executor,
+    stage_cart_action,
     stage_cart_executor,
 )
 from agent_org.config.models import LoadedConfig
-from agent_org.integrations.carts import CartRefusal, CartUnavailable, SupplierCart
+from agent_org.integrations.carts import (
+    CartRefusal,
+    CartUnavailable,
+    SavedCartCopy,
+    SupplierCart,
+)
+from agent_org.integrations.dynarex import SUPPLIER as DYNAREX_SUPPLIER
+from agent_org.integrations.dynarex import DynarexFixtureCart, DynarexPortalCart
+from agent_org.integrations.nar import SUPPLIER as NAR_SUPPLIER
 from agent_org.integrations.nar import NarCartClient, NarFixtureCart
 from agent_org.notify.email import Sender, SendFailed, SmtpSender
 from agent_org.policy.engine import ActionContext, PolicyEngine, TrailingHistory
@@ -132,11 +140,27 @@ def staging_history(
     )
 
 
-def nar_cart(fixtures: Path | None, config: LoadedConfig) -> SupplierCart:
-    """The live narescue.com cart, or a saved copy of one."""
-    if fixtures is not None:
-        return NarFixtureCart(fixture_dir=fixtures)
-    return NarCartClient(credentials_prefix=config.entity.credentials_prefix)
+def supplier_cart_for(supplier: str, fixtures: Path | None, config: LoadedConfig) -> SupplierCart:
+    """The live cart on the supplier's site, or a saved copy of one.
+
+    A supplier with no client here is refused by name rather than falling
+    back to another supplier's: staging Amazon against the NAR cart is the
+    kind of mistake that would only be noticed in a real cart.
+    """
+    prefix = config.entity.credentials_prefix
+    if supplier == NAR_SUPPLIER:
+        if fixtures is not None:
+            return NarFixtureCart(fixture_dir=fixtures)
+        return NarCartClient(credentials_prefix=prefix)
+    if supplier == DYNAREX_SUPPLIER:
+        if fixtures is not None:
+            return DynarexFixtureCart(fixture_dir=fixtures)
+        return DynarexPortalCart(credentials_prefix=prefix)
+    raise CartUnavailable(
+        f"Shannon has no way to reach a '{supplier}' cart, so nothing was read "
+        f"and nothing was staged. She can stage {NAR_SUPPLIER} and "
+        f"{DYNAREX_SUPPLIER}."
+    )
 
 
 def stage_supplier_cart(
@@ -164,11 +188,11 @@ def stage_supplier_cart(
     is delivered separately: a mail server having a bad minute must not
     make a staged cart look unstaged.
     """
-    supplier_cart = cart or nar_cart(fixtures, config)
-    if not dry_run and isinstance(supplier_cart, NarFixtureCart):
+    supplier_cart = cart or supplier_cart_for(supplier, fixtures, config)
+    if not dry_run and isinstance(supplier_cart, SavedCartCopy):
         # Before the task is claimed: a live run that reads a saved cart
         # would report every line as refused, and those refusals would read
-        # exactly like narescue.com turning them down.
+        # exactly like the supplier's own site turning them down.
         raise CartRefusal(
             "A live run puts lines in the real cart, and this one was given the "
             f"saved copy of the cart in '{supplier_cart.fixture_dir}' to read "
@@ -237,14 +261,16 @@ def stage_supplier_cart(
         # Staging keeps its own line-by-line ledger, so a second attempt at
         # the week is allowed to reach the executor: what is already in the
         # cart is skipped there, by SKU, and cannot be added twice.
-        ledgered_actions=frozenset({ACTION_STAGE_CART}),
+        ledgered_actions=frozenset({stage_cart_action(supplier)}),
     )
     attempt_salt = f"attempt-{task.attempts}" if task.attempts > 1 else ""
 
     summary = StagingSummary(supplier=supplier, week=week_name, plan=plan, dry_run=dry_run)
     try:
         outcome = broker.submit(
-            action_type=ACTION_PLAN_CART_STAGING if dry_run else ACTION_STAGE_CART,
+            action_type=plan_cart_staging_action(supplier)
+            if dry_run
+            else stage_cart_action(supplier),
             payload={
                 "task_id": task.id,
                 "schedule_slot": slot,
@@ -405,7 +431,7 @@ __all__ = [
     "NothingToStage",
     "StagingSummary",
     "deliver_staging_report",
-    "nar_cart",
     "reported_lines",
     "stage_supplier_cart",
+    "supplier_cart_for",
 ]

@@ -54,6 +54,8 @@ rules:
   # itself is `nar.stage_cart` and is a different action at Tier 2.
   - action: nar.plan_cart_staging
     tier: 0
+  - action: dynarex.plan_cart_staging
+    tier: 0
 
   # ---- Tier 1: internal state, notify after ----
   - action: internal.enqueue_task

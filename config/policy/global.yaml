@@ -89,6 +89,8 @@ rules:
   # a cart Zach has not authorised is not a read he asked for.
   - action: nar.plan_cart_staging
     tier: 0
+  - action: dynarex.plan_cart_staging
+    tier: 0
 
   # ---- Tier 1: internal state, notify after ----
   - action: internal.enqueue_task

@@ -16,9 +16,11 @@ exist cannot be called by raising anything.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from decimal import Decimal
-from typing import Protocol
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any, Protocol
 
 
 class CartUnavailable(RuntimeError):
@@ -74,10 +76,68 @@ class SupplierCart(Protocol):
     def add_line(self, sku: str, quantity: int) -> CartLine: ...
 
 
+def money(value: Any) -> Decimal | None:
+    """A price, or nothing. Never a guess and never a zero."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+@dataclass
+class SavedCartCopy:
+    """A supplier's cart as a saved JSON file, for a dry run with no account.
+
+    Every supplier's dry run reads one of these, and none of them can add
+    a line: `add_line` exists only to refuse, because a saved cart has
+    nothing to add to. That refusal is also what a live run pointed at a
+    saved copy trips over, which is the bug this shape stops repeating.
+    """
+
+    fixture_dir: Path
+    supplier: str = ""
+    filename: str = ""
+
+    def read_cart(self) -> Cart:
+        path = self.fixture_dir / self.filename
+        if not path.exists():
+            raise CartUnavailable(
+                f"The saved cart '{path}' is missing, so what is already in the "
+                "cart is unknown. Nothing is reported as staged; an unreadable "
+                "cart is not an empty one."
+            )
+        body = json.loads(path.read_text(encoding="utf-8-sig"))
+        lines = tuple(
+            CartLine(
+                sku=str(item["sku"]),
+                name=str(item.get("name", "")),
+                quantity=int(item.get("qty", 0)),
+                price=money(item.get("price")),
+            )
+            for item in body.get("items", [])
+        )
+        return Cart(
+            supplier=self.supplier,
+            cart_id=str(body.get("id", "fixture")),
+            lines=lines,
+            grand_total=money(body.get("grand_total")),
+        )
+
+    def add_line(self, sku: str, quantity: int) -> CartLine:
+        raise CartRefusal(
+            f"This is a saved copy of the cart, not the cart. {quantity} of {sku} "
+            "was not added anywhere."
+        )
+
+
 __all__ = [
     "Cart",
     "CartLine",
     "CartRefusal",
     "CartUnavailable",
+    "SavedCartCopy",
     "SupplierCart",
+    "money",
 ]

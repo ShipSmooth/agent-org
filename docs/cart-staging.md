@@ -171,9 +171,51 @@ Three portal-shaped hazards, each answered the same way NAR's were:
   of them all stop the run and quote what was actually found. A challenge
   is never worked around.
 
+### The Quick Order row is drawn twice, and the first look sees half of it
+
+The first live run added nothing and said the page held only its two
+search forms. That was true and useless: the row is not inside a form,
+and it is not finished when the page arrives. The portal draws a
+part-number box, answers what is typed into it over AJAX
+(`quickorders/updatePrice`), and only then puts a quantity beside it. A
+single scan run the moment the HTML landed, looking for a form holding a
+box named for a code with a quantity next to it, could not have found a
+row on that page however long it looked.
+
+So Shannon looks in two passes, and keeps looking for up to fifteen
+seconds each time:
+
+1. **Find the box.** Any visible, empty, editable text box that is not the
+   site's search — excluded by its name (`q`), its id, and the search form
+   it belongs to, never by the word "search" nearby, because the live row
+   sits in a cell whose own class is `search-box`. Among those, the box
+   named for a part number wins; failing that, one with a quantity already
+   beside it; failing that, the only box on the page. The last is not a
+   guess: it is taken only when there is exactly one, so there is no other
+   box it could have meant.
+2. **Type, then find the quantity.** The part number is typed a character
+   at a time, because the portal hangs its lookup off the keystrokes and a
+   value set in one go arrives at a page that never asked. The quantity is
+   then looked for as a sibling in the row — climbing out of the cell,
+   which never holds both — until it appears.
+
+Either pass failing is a refusal that quotes every field on the page, not
+just its forms. Listing forms is what made the first failure unreadable.
+
+One honest caveat: the shape above is read from the live run's own
+failure, from the page's public markup and from the theme's
+`quickorders/updatePrice` call — not yet from a signed-in look at the
+finished row, which needs the account. `scripts/dynarex_portal_spike.py`
+now prints exactly that, field by field, before and after a part number
+is typed (typing is a lookup; it clicks nothing). The next signed-in run
+of it either confirms this or says plainly what is there instead.
+
 The Quick Order page carries a Checkout button. Shannon walks past it: no
 button whose text offers to check out, pay, place or submit an order is
-ever clicked, wherever the portal puts one.
+ever clicked, wherever the portal puts one — and, since the row's own
+buttons are not in a form either, the button she does click has to say it
+adds. Anything unlabelled, or labelled Clear, Remove or Upload, is left
+alone rather than clicked to find out.
 
 ## What a live run checks afterwards
 

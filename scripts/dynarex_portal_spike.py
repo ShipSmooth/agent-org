@@ -67,6 +67,8 @@ from playwright.sync_api import Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from spike_support import credentials, out_path, transcript
 
+from agent_org.integrations.dynarex import FIELDS_JS, QUICK_ORDER_SKU_JS
+
 OUT_DEFAULT = "dynarex-spike.txt"
 
 # www.dynarex.com redirects here; using the apex directly keeps the printed
@@ -256,7 +258,15 @@ def _read_cart(page: Page) -> None:
 
 
 def _quick_order(page: Page) -> None:
-    """Question 3: what is a Quick Order row made of?"""
+    """Question 3: what is a Quick Order row made of?
+
+    Forms alone were the wrong question the first time round. The live
+    page answered with its two search boxes and nothing else, which was
+    read as "there is no Quick Order row here" when what it meant was
+    "the row is not inside a form". So every field is printed, before and
+    after a part number is typed — the row fills itself in over AJAX as
+    the code is entered, and half of it does not exist until then.
+    """
     print("\n--- looking for Quick Order ---")
     for path in ("/cart/quickorders", "/quickorder", "/quick-order"):
         _open(page, BASE + path)
@@ -271,8 +281,44 @@ def _quick_order(page: Page) -> None:
         ):
             print(f"\nquick order page: {page.url}")
             _describe_forms(page, "the quick order page")
+            _describe_row(page)
             return
     print("\nNo Quick Order page found at any of the paths above.")
+
+
+def _describe_row(page: Page) -> None:
+    """The row as Shannon sees it, with the same scan she uses."""
+    try:
+        page.wait_for_load_state("networkidle", timeout=15_000)
+    except PlaywrightTimeout:
+        print("    the page never went quiet; describing it as it stands.")
+    _say("every field on the quick order page, before typing", page.evaluate(FIELDS_JS))
+
+    found = page.evaluate(QUICK_ORDER_SKU_JS)
+    _say("the box Shannon would take for the part number", found)
+    if found is None:
+        return
+
+    # Typing a part number is a lookup, not an order: nothing is added
+    # here, and no button is clicked at all.
+    box = page.locator("[data-shannon-sku]").first
+    box.click()
+    box.press_sequentially(PARTS[0], delay=60, timeout=45_000)
+    page.wait_for_timeout(3_000)
+    _say(f"every field after typing {PARTS[0]} into it", page.evaluate(FIELDS_JS))
+    _say(
+        "the buttons that appear in the row",
+        page.evaluate(
+            """() => {
+              const box = document.querySelector('[data-shannon-sku]');
+              let node = box;
+              for (let step = 0; node && step < 6; step++) node = node.parentElement;
+              return [...(node || document).querySelectorAll('button, input[type=submit]')]
+                  .map(button => (button.innerText || button.value || '').trim())
+                  .filter(Boolean).slice(0, 20);
+            }"""
+        ),
+    )
 
 
 def _catalogue(page: Page) -> None:

@@ -127,7 +127,9 @@ CODE_IN_TEXT = re.compile(
     r"(?:code|item(?:\s*#)?|sku)\s*[:#]\s*([A-Za-z0-9][\w.-]*)", re.IGNORECASE
 )
 # How the autocomplete writes a part number: "Krinkle Gauze Roll (3161)".
-SUGGESTED_CODE = re.compile(r"\(([A-Za-z0-9][\w.-]*)\)\s*$")
+# Not anchored to the end of the line: a suggestion carries a price after
+# the code as often as not.
+SUGGESTED_CODE = re.compile(r"\(([A-Za-z0-9][\w.-]*)\)")
 GRAND_TOTAL = re.compile(r"(?:grand\s+total|order\s+total|total)\D{0,20}\$\s*([\d,]+\.\d{2})", re.I)
 SIGNED_IN = re.compile(r"sign\s*out|log\s*out|my account", re.IGNORECASE)
 
@@ -244,30 +246,59 @@ QUICK_ORDER_ROW_JS = (
 )
 
 # The autocomplete the portal drops under the row as the code is typed.
-# Its markup is not known from outside the login, so anything visible,
-# short, leaf-shaped and carrying the typed digits is collected and
-# Python decides which — if any — is the part itself.
+# Its markup is not known from outside the login, so the lists are found
+# and then split into rows, and Python decides which — if any — is the
+# part itself.
+#
+# A row is *not* the innermost element carrying the typed digits. The
+# portal highlights the match as its own span, so 33161 is written
+# `3<span>3161</span>`, and reading the innermost node reads 3161 — the
+# spike came back with ['3161', '3161', '3161'] for three different
+# products. Descending stops at the row: a node is split only when two or
+# more of its children carry the digits (a list of suggestions) or when
+# its one matching child is the whole of it (a wrapper).
 SUGGESTIONS_JS = (
     """(wanted) => {"""
     + QUICK_ORDER_PRELUDE
     + """
   const box = document.querySelector('[data-shannon-sku]');
   if (!box) return [];
-  const LIST = "li, [role=option], [class*='autocomplete' i] *, " +
-               "[class*='suggest' i] *, [class*='typeahead' i] *, " +
-               "[class*='dropdown' i] *, [class*='result' i] *";
-  const options = [...document.querySelectorAll(LIST)]
-      .filter(shown)
+  const want = wanted.toLowerCase();
+  const words = node => (node.innerText || '').replace(/\\s+/g, ' ').trim();
+  const holds = node => shown(node) && words(node).toLowerCase().includes(want);
+  const LIST = "ul, ol, table, [role=listbox], [class*='autocomplete' i], " +
+               "[class*='suggest' i], [class*='typeahead' i], " +
+               "[class*='dropdown' i], [class*='result' i], li, [role=option]";
+  const lists = [...document.querySelectorAll(LIST)]
+      .filter(holds)
       .filter(node => !node.contains(box) && node !== box)
-      .filter(node => !node.querySelector(LIST))
-      .filter(node => !node.querySelector('input'))
-      .map(node => [node, (node.innerText || '').replace(/\\s+/g, ' ').trim()])
-      .filter(pair => pair[1].length > 2 && pair[1].length < 200)
-      .filter(pair => pair[1].toLowerCase().includes(wanted.toLowerCase()));
-  return options.slice(0, 40).map((pair, index) => {
-    pair[0].setAttribute('data-shannon-option', String(index));
-    return {index: index, text: pair[1]};
-  });
+      .filter(node => !node.querySelector('input, form'));
+  const outermost = lists.filter(
+      node => !lists.some(other => other !== node && other.contains(node)));
+  const rows = [];
+  const split = (node, depth) => {
+    const children = [...node.children].filter(holds);
+    if (depth < 8 && children.length > 1) {
+      children.forEach(child => split(child, depth + 1));
+    } else if (depth < 8 && children.length === 1 &&
+               words(children[0]) === words(node)) {
+      split(children[0], depth + 1);
+    } else {
+      rows.push(node);
+    }
+  };
+  outermost.forEach(node => split(node, 0));
+  const seen = new Set();
+  const options = [];
+  for (const node of rows) {
+    const text = words(node);
+    if (text.length < 3 || text.length > 200 || seen.has(text)) continue;
+    seen.add(text);
+    node.setAttribute('data-shannon-option', String(options.length));
+    options.push({index: options.length, text: text});
+    if (options.length >= 40) break;
+  }
+  return options;
 }"""
 )
 
@@ -369,8 +400,7 @@ def exact_suggestion(sku: str, options: list[dict[str, Any]]) -> dict[str, Any] 
     """
     for option in options:
         text = str(option.get("text", ""))
-        suffix = SUGGESTED_CODE.search(text)
-        codes = ([suffix.group(1)] if suffix else []) + CODE_IN_TEXT.findall(text)
+        codes = SUGGESTED_CODE.findall(text) + CODE_IN_TEXT.findall(text)
         if sku in codes:
             return option
     return None

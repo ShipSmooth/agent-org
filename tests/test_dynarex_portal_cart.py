@@ -523,8 +523,14 @@ def test_a_suggestion_counts_only_when_the_code_in_it_is_the_part() -> None:
     assert exact_suggestion("316", offered) is None
     assert exact_suggestion("3161", [{"index": 0, "text": "3161 pieces in a case (3553)"}]) is None
     assert exact_suggestion("3161", [{"index": 7, "text": "Gauze Code: 3161"}]) is not None
-    # The code is not always the last thing in the line.
+    # The code is not always the last thing in the line, but it is the
+    # last thing in brackets: a description that names another part is
+    # not this suggestion's own code.
     assert exact_suggestion("3161", [{"index": 3, "text": "Gauze (3161) $12.34 / CS"}]) is not None
+    assert (
+        exact_suggestion("3161", [{"index": 4, "text": "Refill for Krinkle (3161) (43161) $7.25"}])
+        is None
+    )
 
 
 def test_the_saved_dynarex_cart_reads_but_refuses_to_be_added_to(tmp_path: Path) -> None:

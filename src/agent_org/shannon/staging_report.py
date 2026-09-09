@@ -153,6 +153,7 @@ def render(plan: StagingPlan, result: dict[str, Any], context: StagingContext) -
 
     out += ["", "THE CART BEFORE THIS RUN", THIN]
     out += _cart_block(before, "  Nothing was in the cart.")
+    out += _read_from(before)
     out += [
         "",
         "  Anything already in the cart is yours and was left exactly as it was.",
@@ -178,6 +179,20 @@ def render(plan: StagingPlan, result: dict[str, Any], context: StagingContext) -
         RULE,
     ]
     return "\n".join(out)
+
+
+def _read_from(cart: dict[str, Any]) -> list[str]:
+    """Whose cart this actually is, in the report that describes it.
+
+    A cart read from the wrong supplier is a plausible-looking cart, and
+    the only thing that gives it away is the name it came under. So the
+    name is printed beside the lines rather than assumed from the title.
+    """
+    supplier = str(cart.get("supplier") or "")
+    if not supplier:
+        return []
+    where = str(cart.get("cart_id") or "")
+    return [f"  read from the {supplier} cart" + (f" ({where})" if where else "")]
 
 
 def _cart_block(cart: dict[str, Any], empty: str) -> list[str]:

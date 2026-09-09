@@ -190,18 +190,42 @@ def _sign_in(page: Page, email: str, password: str) -> bool:
     print(f"\nsign-in page: {page.url}")
     _describe_forms(page, "the sign-in page")
 
-    # commercebuild names these login_username and login_password; the
-    # broader selectors are the fallback if the theme is ever changed.
-    page.locator(
-        "input[name='login_username'], input[type='email'], input[name*='email' i]"
+    # The page carries the search box twice before it carries the login, so
+    # "the first submit button on the page" searched for an empty string and
+    # landed on /product_search/?q=. The form holding the password field is
+    # the only one this can be: everything below is scoped to it.
+    form = page.locator("form:has(input[type='password'])").first
+    if not form.count():
+        print("\nNo form on this page holds a password field. Nothing was submitted.")
+        return False
+    print(f"submitting the form whose action is {form.get_attribute('action')!r}")
+
+    form.locator(
+        "input[name='login_username'], input[type='email'], input[type='text']"
     ).first.fill(email)
-    page.locator("input[name='login_password'], input[type='password']").first.fill(password)
+    password_field = form.locator("input[type='password']").first
+    password_field.fill(password)
+    submit = form.locator("button[type='submit'], input[type='submit'], button:not([type])")
     with page.expect_navigation(wait_until="domcontentloaded", timeout=45_000):
-        page.locator("button[type='submit'], input[type='submit']").first.click()
+        if submit.count():
+            submit.first.click()
+        else:
+            password_field.press("Enter")
 
     signed_in = page.locator("text=/sign out|log out|my account/i").count() > 0
     print(f"after sign-in: {page.url} — signed in: {signed_in}")
     if not signed_in:
+        # The portal's own words are the useful half of a refusal — a wrong
+        # password and an unverified address look identical otherwise. The
+        # same banner is nested several deep, so only distinct text is shown.
+        complaints = page.locator("[class*='error' i], [class*='message' i], [role='alert']")
+        said_already: set[str] = set()
+        for index in range(min(complaints.count(), 8)):
+            said = re.sub(r"\s+", " ", complaints.nth(index).inner_text()).strip()
+            said = re.sub(r"\s*Close Message\s*$", "", said)
+            if said and said not in said_already:
+                said_already.add(said)
+                print(f"  the portal says: {_clean(said)[:200]}")
         _say("what the page says instead", page.locator("body").inner_text()[:600])
     return signed_in
 

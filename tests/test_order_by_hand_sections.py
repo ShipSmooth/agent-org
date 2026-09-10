@@ -12,6 +12,7 @@ for it also offers 33161 and 43161.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -21,15 +22,22 @@ from agent_org.config.errors import Finding, Severity
 from agent_org.config.loader import _product_url, load_config
 from agent_org.config.models import Capability, ComponentKey, LoadedConfig
 from agent_org.config.yamlsource import Loc, YamlMap
-from agent_org.integrations.reads import OrderSignals
+from agent_org.integrations.reads import OrderSignals, SalesVelocity
 from agent_org.shannon.calculator import ReplenishmentCalculator, ReplenishmentResult
 from agent_org.shannon.product_links import amazon_product_url, product_url
-from agent_org.shannon.report import ReportContext, by_hand_block, render, staged_block
+from agent_org.shannon.report import (
+    ReportContext,
+    _staging_is_authorised,
+    by_hand_block,
+    render,
+    staged_block,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 TODAY = date(2026, 9, 16)
 GAUZE = ComponentKey(supplier="dynarex", part="3161")
 GLOVES = ComponentKey(supplier="amazon_business", part="B0FC56RYZ3")
+BANDAGE = ComponentKey(supplier="dynarex", part="3681")
 
 
 def _entry(url: str) -> YamlMap:
@@ -130,7 +138,31 @@ def test_every_by_hand_line_says_what_and_how_many(config: LoadedConfig) -> None
             continue
         assert plan.name in section
         assert plan.key.part in section
-        assert f"order {plan.order_units} units" in section
+        assert f"{plan.order_units} units needed" in section
+
+
+def test_the_quantity_offered_is_packs_and_not_sellable_units(config: LoadedConfig) -> None:
+    """A quantity box counts packs. Leading with the sellable count is how
+    2000 bandages becomes 2000 cases of 240, so the pack count leads and
+    the need it satisfies follows it."""
+    result = _result(config)
+    section = "\n".join(by_hand_block(result, config))
+    plan = next(p for p in result.components if p.key == BANDAGE)
+    assert plan.purchase_units == 9 and plan.order_units == 2000
+    assert f"order {plan.purchase_units} × case of 240 — 2160 units, against 2000 units needed" in (
+        section
+    )
+    assert "order 2000 units" not in section
+
+
+def test_an_unconfirmed_pack_size_gives_no_quantity_at_all(config: LoadedConfig) -> None:
+    """Where nobody has confirmed what a pack holds, a number in the box
+    could mean either thing — so Shannon gives none and says why."""
+    result = _result(config)
+    section = "\n".join(by_hand_block(result, config))
+    plan = next(p for p in result.components if p.key == GLOVES)
+    assert plan.purchase_units is None
+    assert f"{plan.order_units} units needed — pack size unconfirmed" in section
 
 
 def test_a_line_with_no_provable_page_is_printed_unlinked(config: LoadedConfig) -> None:
@@ -207,6 +239,48 @@ def test_a_staged_line_is_never_described_as_something_to_go_and_buy(
             assert plan.name in staged and plan.name not in hand
         elif plan.routing == "gap_list":
             assert plan.name in hand and plan.name not in staged
+
+
+def _nar_result(config: LoadedConfig) -> ReplenishmentResult:
+    """Enough tourniquet sales to put NAR lines on the cart route."""
+    return ReplenishmentCalculator(
+        config=config,
+        stock={},
+        velocity={"25-010": SalesVelocity(sku="25-010", units_sold=900, window_days=90)},
+        inbound={},
+        on_order={},
+        today=TODAY,
+        manual_proposals={},
+    ).calculate()
+
+
+def test_the_staged_section_does_not_say_these_are_in_a_cart_already(
+    config: LoadedConfig,
+) -> None:
+    """Staging is a separate run from this email. Until it has run and
+    said what it put in, the cart is empty — and the section says so
+    rather than handing Zach a cart to go and order."""
+    staged = "\n".join(staged_block(_nar_result(config), config))
+    assert "nothing here is in a cart yet" in staged
+    assert "already" not in staged
+
+
+def test_staging_that_policy_refuses_is_not_promised(config: LoadedConfig) -> None:
+    """`max_tier_this_phase: 0` refuses nar.stage_cart, so the run this
+    section points at will not fill anything. Promising it leaves Zach
+    waiting on a confirmation email that never arrives."""
+    assert not _staging_is_authorised(config, "nar")
+    staged = "\n".join(staged_block(_nar_result(config), config))
+    assert "Policy refuses that staging run today" in staged
+
+
+def test_an_authorised_supplier_is_not_flagged_as_refused(config: LoadedConfig) -> None:
+    """Raise the ceiling to what nar.stage_cart costs and the caveat goes,
+    so the line tracks policy rather than being printed unconditionally."""
+    allowed = replace(config, policy=replace(config.policy, max_tier_this_phase=2))
+    assert _staging_is_authorised(allowed, "nar")
+    staged = "\n".join(staged_block(_nar_result(allowed), allowed))
+    assert "Policy refuses" not in staged
 
 
 def test_the_amazon_parts_list_is_all_linkable(config: LoadedConfig) -> None:

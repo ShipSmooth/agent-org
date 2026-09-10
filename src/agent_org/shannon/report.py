@@ -17,6 +17,7 @@ from datetime import datetime
 
 from agent_org.config.models import ComponentClass, LoadedConfig, ParkingLotItem
 from agent_org.integrations.reads import OrderSignals
+from agent_org.policy.engine import PolicyEngine
 from agent_org.shannon.calculator import (
     GAP_LIST,
     ComponentPlan,
@@ -106,18 +107,48 @@ def _count(number: int, singular: str, plural: str) -> str:
 
 
 def _quantity_line(plan: ComponentPlan) -> str:
-    """How much to buy, in the units the supplier's own page sells."""
-    line = f"order {plan.order_units} units"
-    if plan.purchase_units is not None and plan.purchase_unit_name:
-        line += f" — {plan.purchase_units} × {plan.purchase_unit_name}"
-        if plan.actual_units is not None and plan.actual_units != plan.order_units:
-            line += f", which brings {plan.actual_units}"
+    """What to type into the quantity box, which is packs and not units.
+
+    The number that goes in a cart is `purchase_units`: 334 sheets of
+    labels, not the 10,000 labels they carry. Leading with the sellable
+    count is how you buy 10,000 packs by accident, so it follows behind as
+    the need it satisfies. Where the pack size is unconfirmed there is no
+    quantity to give at all — the calculator says so, and so does this.
+    """
+    need = f"{plan.order_units} units needed"
+    if plan.purchase_units is None:
+        return f"{need} — pack size unconfirmed, so no cart quantity: read it off the page"
+    if plan.purchase_unit_name is None and plan.units_per_purchase_unit in (None, 1):
+        return f"order {plan.purchase_units} units"
+    pack = plan.purchase_unit_name or (
+        f"pack of {plan.units_per_purchase_unit}"
+        if plan.units_per_purchase_unit is not None
+        else "pack"
+    )
+    line = f"order {plan.purchase_units} × {pack}"
+    if plan.actual_units is not None:
+        line += f" — {plan.actual_units} units, against {need}"
+    else:
+        line += f" — {need}"
     return line
 
 
 def _supplier_name(config: LoadedConfig, key: str) -> str:
     supplier = config.boms.suppliers.get(key)
     return supplier.name if supplier is not None else key
+
+
+def _staging_is_authorised(config: LoadedConfig, supplier: str) -> bool:
+    """Whether policy would let the staging run actually fill this cart.
+
+    Staging is a separate command from this report, and policy can refuse
+    it — `max_tier_this_phase: 0` refuses every one. A report that says
+    "she stages these" while the broker refuses leaves Zach waiting on a
+    confirmation that never comes, so the section says which it is.
+    """
+    action = f"{supplier}.stage_cart"
+    engine = PolicyEngine(config.policy)
+    return engine.resolve(action).tier <= engine.ceiling_for(action)
 
 
 def staged_block(result: ReplenishmentResult, config: LoadedConfig) -> list[str]:
@@ -134,12 +165,18 @@ def staged_block(result: ReplenishmentResult, config: LoadedConfig) -> list[str]
     if not staged:
         add("  Nothing is staged this week.")
         return lines
-    add("  Shannon adds these to the supplier's cart herself, on the staging run that")
-    add("  follows this email — you get a second email confirming exactly what went in.")
+    add("  Shannon puts these in the supplier's cart herself, on the separate staging")
+    add("  run — not on this email — and that run sends you a second email naming")
+    add("  exactly what went in. Until it does, nothing here is in a cart yet.")
     add("  She never checks out, pays or places the order: you open the cart and do that.")
     for supplier in sorted({plan.supplier for plan in staged}):
         add("")
         add(f"  {_supplier_name(config, supplier)} — {_route_name(f'{supplier}_cart')}")
+        if not _staging_is_authorised(config, supplier):
+            add(
+                "    (Policy refuses that staging run today, so this cart stays "
+                "empty until you authorise it.)"
+            )
         for plan in (p for p in staged if p.supplier == supplier):
             add(f"    {plan.key.part}  {plan.name}")
             add(f"        {_quantity_line(plan)}")

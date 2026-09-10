@@ -43,6 +43,8 @@ from playwright.sync_api import Page, sync_playwright
 
 from agent_org.integrations.carts import CartRefusal, CartUnavailable, SupplierCart
 from agent_org.integrations.dynarex import (
+    QUICK_ORDER_ROW_JS,
+    SUGGESTIONS_JS,
     DynarexFixtureCart,
     DynarexPortalCart,
     credentials,
@@ -116,7 +118,12 @@ for (const row of document.querySelectorAll('.rTableRow')) {
     setTimeout(() => {
       for (const code of (OFFERS[typed] || [])) {
         const item = document.createElement('li');
-        item.textContent = NAMES[code] + ' (' + code + ')';
+        // As the portal writes it: the matched digits are their own
+        // highlighted span, so 33161 is '3' plus a highlighted '3161'.
+        const at = code.indexOf(typed);
+        item.innerHTML = "<span class='name'>" + NAMES[code] + "</span> (" +
+            code.slice(0, at) + "<span class='hl'>" + typed + '</span>' +
+            code.slice(at + typed.length) + ') <span class="p">$1.00</span>';
         item.addEventListener('click', () => choose(row, code));
         list.appendChild(item);
       }
@@ -358,6 +365,28 @@ def test_a_dropdown_that_only_offers_the_neighbours_is_left_unclicked(
     assert _Portal.clicked == [], "typing alone adds nothing, so nothing was added"
 
 
+def test_a_suggestion_is_read_whole_and_not_just_its_highlighted_digits(
+    portal: str, page: Page
+) -> None:
+    """The portal highlights the digits that matched, in their own span,
+    so 33161 is written as a plain 3 and a highlighted 3161. Reading the
+    innermost node read all three suggestions as '3161' and Shannon could
+    not tell the part from its neighbours at all."""
+    page.goto(f"{portal}/cart/quickorders")
+    assert page.evaluate(QUICK_ORDER_ROW_JS) is not None
+    page.locator("[data-shannon-sku]").first.press_sequentially("3161", delay=20)
+    page.wait_for_timeout(600)
+
+    offered = [dict(option) for option in page.evaluate(SUGGESTIONS_JS, "3161")]
+
+    assert [option["text"] for option in offered] == [
+        "Nasal Oxygen Cannula (33161) $1.00",
+        "Krinkle Gauze Roll - Sterile (3161) $1.00",
+        "Suction Tubing Loop (43161) $1.00",
+    ]
+    assert exact_suggestion("3161", offered) == offered[1]
+
+
 def test_a_row_that_never_fills_itself_in_says_the_line_may_be_there_at_one(
     cart: DynarexPortalCart,
 ) -> None:
@@ -494,6 +523,20 @@ def test_a_suggestion_counts_only_when_the_code_in_it_is_the_part() -> None:
     assert exact_suggestion("316", offered) is None
     assert exact_suggestion("3161", [{"index": 0, "text": "3161 pieces in a case (3553)"}]) is None
     assert exact_suggestion("3161", [{"index": 7, "text": "Gauze Code: 3161"}]) is not None
+    # The code is not always the last thing in the line.
+    assert exact_suggestion("3161", [{"index": 3, "text": "Gauze (3161) $12.34 / CS"}]) is not None
+    # Two codes in one line and there is no telling which is the part:
+    # "replaces (3161)" reads exactly like a part number, whichever end
+    # of the line it sits at. Both are refused rather than guessed.
+    assert (
+        exact_suggestion("3161", [{"index": 4, "text": "Refill for Krinkle (3161) (43161) $7.25"}])
+        is None
+    )
+    assert (
+        exact_suggestion("3161", [{"index": 5, "text": "Suction Loop (43161) replaces (3161)"}])
+        is None
+    )
+    assert exact_suggestion("3161", [{"index": 6, "text": "Gauze (3161) Code: 43161"}]) is None
 
 
 def test_the_saved_dynarex_cart_reads_but_refuses_to_be_added_to(tmp_path: Path) -> None:

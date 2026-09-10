@@ -72,6 +72,7 @@ from time import monotonic
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
 from agent_org.integrations.carts import (
@@ -443,6 +444,12 @@ class DynarexPortalCart:
     # then filled in by the portal's own JavaScript, so 'not there' only
     # means anything after waiting for it.
     settle_ms: int = 15_000
+    # How long the "Checking your browser" interstitial is given to send
+    # itself on. The page says so in its own words — "click here if you
+    # are not automatically redirected after 5 seconds" — and in a real
+    # browser it does clear; reading it the instant it arrives called a
+    # timed redirect a block.
+    challenge_ms: int = 15_000
     # Injected by the tests, which drive every path below against a local
     # portal, with no account and nothing of Zach's touched.
     page: Page | None = field(default=None, compare=False, repr=False)
@@ -684,6 +691,12 @@ class DynarexPortalCart:
         else:
             field.press("Enter")
         page.wait_for_load_state("domcontentloaded", timeout=self.timeout_ms)
+        if self._captcha_persists(page):
+            raise CartUnavailable(
+                "dynarex.com answered the sign-in with a captcha that was still "
+                f"there {self.challenge_ms // 1000}s later. Nothing was read and "
+                "nothing was staged."
+            )
         if not SIGNED_IN.search(self._text(page)):
             # The portal's own words, never the password: "you need to
             # verify your email address" and "invalid login" are the same
@@ -706,13 +719,35 @@ class DynarexPortalCart:
     def _open(self, page: Page, path: str) -> None:
         refuse_unless_safe(urlparse(path).path)
         page.goto(f"{self.base_url}{path}", wait_until="domcontentloaded", timeout=self.timeout_ms)
-        if self._captcha(page):
+        if self._captcha_persists(page):
             raise CartUnavailable(
-                f"dynarex.com answered {path} with a captcha rather than the page. "
-                "Nothing was read and nothing was staged — a challenge is not "
-                "something an unattended run can answer, and it must not be "
-                "worked around."
+                f"dynarex.com answered {path} with a captcha rather than the page, "
+                f"and it was still there {self.challenge_ms // 1000}s later. Nothing "
+                "was read and nothing was staged — a challenge is not something an "
+                "unattended run can answer, and it must not be worked around."
             )
+
+    def _captcha_persists(self, page: Page) -> bool:
+        """A challenge that is still there after being waited out.
+
+        Most of what the portal puts up is not a challenge at all: the
+        interstitial redirects itself after about five seconds, and only
+        an immediate read mistakes that for a wall. So it is watched
+        until it clears, and called a block only if it does not.
+        """
+        deadline = monotonic() + self.challenge_ms / 1000
+        while True:
+            try:
+                challenged = self._captcha(page)
+            except PlaywrightError:
+                # The interstitial navigating away underneath the read is
+                # the thing being waited for, not a failure.
+                challenged = True
+            if not challenged:
+                return False
+            if monotonic() >= deadline:
+                return True
+            page.wait_for_timeout(500)
 
     @staticmethod
     def _captcha(page: Page) -> bool:

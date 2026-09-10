@@ -12,7 +12,11 @@ writing:
    reCAPTCHA interstitial rather than the storefront; later requests from
    the same machine were served normally. So the challenge is occasional
    rather than constant, which is worse than a flat refusal: an unattended
-   Monday-morning run would work most weeks and silently fail some.
+   Monday-morning run would work most weeks and silently fail some. Much
+   of it turned out not to be a refusal at all: the interstitial sends
+   itself on after about five seconds, in a browser and here alike, so
+   every page load now waits it out and only a challenge still standing
+   fifteen seconds later is reported as a block.
 2. **What the sign-in form and the cart page actually are** — the field
    names, the URLs, and whether the cart survives a fresh login in a clean
    browser profile the way it must for an unattended run.
@@ -59,6 +63,7 @@ from __future__ import annotations
 
 import re
 import sys
+from time import monotonic
 from typing import Any
 from urllib.parse import urlparse
 
@@ -103,6 +108,15 @@ class RefusedUrl(RuntimeError):
     """A URL that could place or pay for an order was asked for."""
 
 
+class Challenged(RuntimeError):
+    """A challenge page outlasted the wait, so nothing below it was read.
+
+    Raised by every page load rather than checked by some callers: read as
+    a page, the interstitial is an empty cart, a missing Quick Order row
+    and a catalogue with no parts in it, all reported as fact.
+    """
+
+
 def _clean(text: str) -> str:
     """Personal detail out; part numbers, quantities and prices in."""
     text = EMAILISH.sub("[redacted]", text)
@@ -120,6 +134,37 @@ def _open(page: Page, url: str) -> None:
     if FORBIDDEN.search(path):
         raise RefusedUrl(url)
     page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+    if _wait_out_a_challenge(page):
+        raise Challenged(url)
+
+
+def _wait_out_a_challenge(page: Page, seconds: float = 15.0) -> bool:
+    """Sit through the interstitial before calling it a block.
+
+    "Checking your browser" sends itself on after about five seconds —
+    the page says as much — and a real browser simply waits. Reading it
+    the instant it arrives reported a timed redirect as a wall twice in
+    a row. True if it is still there after the wait.
+    """
+    deadline = monotonic() + seconds
+    waited = False
+    while True:
+        try:
+            challenged = _blocked_by_a_captcha(page)
+        except PlaywrightError:
+            # The interstitial navigating away underneath the read is
+            # the thing being waited for, not a failure.
+            challenged = True
+        if not challenged:
+            break
+        if monotonic() >= deadline:
+            print(f"    challenge page still up after {seconds:.0f}s of waiting")
+            return True
+        waited = True
+        page.wait_for_timeout(500)
+    if waited:
+        print(f"    a challenge page appeared and cleared itself; now at {page.url}")
+    return False
 
 
 def _blocked_by_a_captcha(page: Page) -> bool:
@@ -185,9 +230,6 @@ def _sign_in(page: Page, email: str, password: str) -> bool:
     for path in ("/user/login/", "/user/login", "/customer/account/login/", "/login"):
         _open(page, BASE + path)
         _landed_on(page, path)
-        if _blocked_by_a_captcha(page):
-            print(f"\nCAPTCHA at {path} — the portal is challenging this browser.")
-            return False
         if page.locator("input[type='password']").count():
             break
     else:
@@ -218,6 +260,9 @@ def _sign_in(page: Page, email: str, password: str) -> bool:
             submit.first.click()
         else:
             password_field.press("Enter")
+
+    if _wait_out_a_challenge(page):
+        raise Challenged(page.url)
 
     signed_in = page.locator("text=/sign out|log out|my account/i").count() > 0
     print(f"after sign-in: {page.url} — signed in: {signed_in}")
@@ -371,13 +416,6 @@ def _look(argv: list[str]) -> int:
         try:
             _open(page, BASE + "/")
             _landed_on(page, "/")
-            if _blocked_by_a_captcha(page):
-                print(
-                    "CAPTCHA on the front page. The portal is challenging this browser "
-                    "before any login is attempted — which is the answer to question 1, "
-                    "and it means an unattended run cannot sign in from here. Stopping."
-                )
-                return 1
 
             email, password = credentials("DYNAREX", "dynarex.com")
             if not _sign_in(page, email, password):
@@ -388,6 +426,14 @@ def _look(argv: list[str]) -> int:
             _quick_order(page)
             print("\n--- do the four parts exist under those numbers? ---")
             _catalogue(page)
+        except Challenged as challenge:
+            print(
+                f"\nCAPTCHA at {challenge}, still up after waiting it out. The portal "
+                "is challenging this browser, so nothing below that page was read — "
+                "an interstitial read as a page is an empty cart and a missing Quick "
+                "Order row. Stopping."
+            )
+            return 1
         except PlaywrightTimeout as timeout:
             print(f"\nTimed out: {timeout}")
             return 1

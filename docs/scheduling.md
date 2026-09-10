@@ -59,11 +59,19 @@ Unit files are in `deploy/systemd/`. They assume the checkout is at
 user in the service file if yours differ, then:
 
 ```bash
+# ProtectSystem=strict makes everything read-only but the report folder,
+# and systemd sets that mount up before the run starts — so the folder
+# has to exist first, or the tick fails before Shannon gets to make it.
+sudo install -d -o shannon -g shannon /opt/agent-org/reports
 sudo cp deploy/systemd/shannon-tick.service /etc/systemd/system/
 sudo cp deploy/systemd/shannon-tick.timer   /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now shannon-tick.timer
 ```
+
+The service does not require a `postgresql.service`: the database runs
+in Docker here, and a missing host unit would stop the timer firing at
+all rather than letting the run say the database is down.
 
 Check it:
 

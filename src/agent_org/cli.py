@@ -184,11 +184,15 @@ def cmd_sync(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    return _run_the_week(args, _load(args), already_done_is_fine=False)
+    config = _load(args)
+    return _run_the_week(args, config, _local_now(config), already_done_is_fine=False)
 
 
 def _run_the_week(
-    args: argparse.Namespace, config: LoadedConfig, already_done_is_fine: bool
+    args: argparse.Namespace,
+    config: LoadedConfig,
+    now: datetime,
+    already_done_is_fine: bool,
 ) -> int:
     """This week's numbers, written and posted.
 
@@ -196,6 +200,12 @@ def _run_the_week(
     that is already done is the expected answer and not a fault worth
     mailing an operator about. Typed by hand it is worth saying loudly,
     because the person typing expected a report out of it.
+
+    `now` is the business's own clock, and the week a run belongs to is
+    counted from it. In UTC, Sunday evening in Springfield is already
+    Monday: a catch-up run started then would be filed under the week
+    about to begin, and Monday's proper run would be refused as one
+    already done.
     """
     try:
         settings = DatabaseSettings.from_env()
@@ -215,7 +225,7 @@ def _run_the_week(
                     config=config,
                     fixtures=fixtures,
                     output_dir=Path(args.output),
-                    now=datetime.now(tz=UTC),
+                    now=now,
                     again=bool(args.again),
                 )
             # The report row and the file are committed here, before
@@ -450,7 +460,7 @@ def cmd_tick(args: argparse.Namespace) -> int:
         print(f"Nothing is due for {config.entity.legal_name} as of {now:%A %d %B %Y %H:%M %Z}.")
         return EXIT_OK
     print(f"{SHANNON_REPLENISHMENT} is due. Running this week's replenishment.")
-    return _run_the_week(args, config, already_done_is_fine=True)
+    return _run_the_week(args, config, now, already_done_is_fine=True)
 
 
 def cmd_schedule(args: argparse.Namespace) -> int:

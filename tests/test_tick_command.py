@@ -22,7 +22,7 @@ import pytest
 from agent_org import cli
 from agent_org.cli import main
 from agent_org.runtime.worker import RunAlreadyDone, RunSummary
-from agent_org.tasks.queue import Task, TaskState
+from agent_org.tasks.queue import Task, TaskState, schedule_slot
 
 GOLDEN_CONFIG = Path(__file__).parent / "fixtures" / "golden" / "config"
 
@@ -188,6 +188,27 @@ def test_the_schedule_is_read_in_the_business_s_own_timezone(
     )
     assert _tick("--no-email") == 0
     assert runs == []
+
+
+def test_a_sunday_night_catch_up_belongs_to_the_week_it_was_owed_for(
+    clock: Clock, runs: list[dict[str, object]]
+) -> None:
+    """Which week a run counts as is counted on the business's clock.
+
+    Eleven at night on the Sunday in Springfield is already Monday in
+    UTC. Filed under the UTC week, this catch-up would take the slot of
+    the run due the next morning, and that morning's tick would find the
+    week done and send nothing.
+    """
+    clock(SUNDAY_NIGHT)
+    assert _tick("--no-email") == 0
+    moment = runs[0]["now"]
+    assert isinstance(moment, datetime)
+    assert schedule_slot("shannon_replenishment", moment) == "shannon_replenishment/2026-W37"
+    assert (
+        schedule_slot("shannon_replenishment", moment.astimezone(UTC))
+        == "shannon_replenishment/2026-W38"
+    )
 
 
 def test_a_timer_cannot_stage_a_cart(

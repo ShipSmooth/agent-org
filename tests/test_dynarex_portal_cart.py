@@ -161,6 +161,9 @@ class _Portal(BaseHTTPRequestHandler):
     cart: ClassVar[dict[str, int]] = {}
     clicked: ClassVar[list[str]] = []
     captcha: ClassVar[bool] = False
+    # The interstitial the live site puts up: it sends itself on after a
+    # moment, so it is served for this many page loads and then gone.
+    challenges_left: ClassVar[int] = 0
     quick_order_row: ClassVar[bool] = True
     # Whether the autocomplete offers the part itself, or only its
     # neighbours, and whether the row answers a click at all.
@@ -232,8 +235,15 @@ class _Portal(BaseHTTPRequestHandler):
         return f"<html><body>Sign Out{results}</body></html>"
 
     def do_GET(self) -> None:
-        if self.captcha:
-            self._send("<html><head><title>Checking your browser</title></head><body/></html>")
+        if self.captcha or _Portal.challenges_left > 0:
+            if not self.captcha:
+                _Portal.challenges_left -= 1
+            self._send(
+                "<html><head><title>Checking your browser</title></head><body>"
+                "Click here if you are not automatically redirected after 5 seconds."
+                "<script>setTimeout(() => location.reload(), 300)</script>"
+                "</body></html>"
+            )
             return
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
@@ -275,6 +285,7 @@ def portal() -> Iterator[str]:
     _Portal.cart = {}
     _Portal.clicked = []
     _Portal.captcha = False
+    _Portal.challenges_left = 0
     _Portal.quick_order_row = True
     _Portal.offers_the_part = True
     _Portal.fills_row = True
@@ -300,7 +311,7 @@ def page() -> Iterator[Page]:
 def cart(portal: str, page: Page, monkeypatch: pytest.MonkeyPatch) -> DynarexPortalCart:
     monkeypatch.setenv("DYNAREX_EMAIL", EMAIL)
     monkeypatch.setenv("DYNAREX_PASSWORD", PASSWORD)
-    return DynarexPortalCart(base_url=portal, page=page, settle_ms=5_000)
+    return DynarexPortalCart(base_url=portal, page=page, settle_ms=5_000, challenge_ms=5_000)
 
 
 def test_an_empty_cart_is_read_as_empty_and_a_full_one_line_by_line(
@@ -471,6 +482,21 @@ def test_a_captcha_stops_the_run_rather_than_being_worked_around(
         cart.read_cart()
 
 
+def test_the_interstitial_is_waited_out_rather_than_read_as_a_block(
+    cart: DynarexPortalCart,
+) -> None:
+    """The interstitial redirects itself after a few seconds, and a real
+    browser simply waits; reading it the instant it arrived called a timed
+    redirect a wall and stopped two live runs."""
+    _Portal.cart = {"3161": 4}
+    _Portal.challenges_left = 3
+
+    read = cart.read_cart()
+
+    assert _Portal.challenges_left == 0, "the challenge was sat through, not skipped"
+    assert [(line.sku, line.quantity) for line in read.lines] == [("3161", 4)]
+
+
 def test_a_missing_login_is_a_refusal_to_read_rather_than_an_empty_cart(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -499,6 +525,7 @@ def test_the_only_thing_this_client_can_do_to_a_cart_is_read_it_and_add_to_it() 
         "headless",
         "page",
         "settle_ms",
+        "challenge_ms",
         "supplier",
         "timeout_ms",
     }

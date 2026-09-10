@@ -169,7 +169,11 @@ Three portal-shaped hazards, each answered the same way NAR's were:
   says neither "empty" nor what it holds, a row with no part number, a
   Quick Order page with no part-number box, and a captcha in place of any
   of them all stop the run and quote what was actually found. A challenge
-  is never worked around.
+  is never worked around — but it is waited out first: "Checking your
+  browser" redirects itself after about five seconds, as the page itself
+  says, so it is re-read until it clears and only counts as a block if it
+  is still there fifteen seconds later. Reading it the instant it arrived
+  stopped two runs that a browser would have sat through.
 
 ### The Quick Order row: a dropdown, a click, and a quantity afterwards
 

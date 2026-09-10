@@ -78,8 +78,6 @@ rules:
     tier: 1
   - action: internal.update_forecast_params    # writing computed velocities to DB
     tier: 1
-  - action: amazon_business.stage_cart          # ops-consumable cart URL from purchase_asins
-    tier: 1                                     # spends nothing, reaches no outside party
 
   # ---- Tier 0: the ops-consumable reminder report itself ----
   - action: internal.write_ops_reminder_report  # calendar-triggered, every 6 weeks (param)
@@ -87,8 +85,6 @@ rules:
 
   # ---- Tier 2: reaches outside the company / any purchase action ----
   - action: nar.stage_cart                # stage the weekly NAR order cart
-    tier: 2
-  - action: dynarex.stage_cart            # stage the dynarex.com cart (never checkout)
     tier: 2
   - action: notify.email                  # send Zach the reorder report
     tier: 2

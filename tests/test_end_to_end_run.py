@@ -200,7 +200,7 @@ def test_the_report_carries_the_parameters_and_the_bom_version(report: str) -> N
 
 
 def test_the_report_carries_the_gap_list_builds_and_parking_lot(report: str) -> None:
-    assert "GAP LIST" in report
+    assert "ORDER THESE BY HAND" in report
     assert "KITS — BUILD RECOMMENDATIONS" in report
     assert "PARKING LOT" in report
     assert "IFAK-CAT" in report

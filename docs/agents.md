@@ -30,9 +30,8 @@ plus the calendar-triggered ops-consumable reminder every 6 weeks (config).
 **Scope:** compute the weekly reorder per docs/replenishment.md; split by
 supplier per docs/supplier-model.md; propose (a) staging the NAR cart and
 (b) the report email, both Tier 2, through the ActionBroker. Separately:
-emit the ops-consumable reminder report (Tier 0) on its cadence and offer
-to stage the Amazon Business cart from its purchase ASINs (Tier 1, notify
-after). Everything she sends goes to Zach alone, to and from
+emit the ops-consumable reminder report (Tier 0) on its cadence.
+Everything she sends goes to Zach alone, to and from
 zach@ithrivemedical.com — resolved from the `zach` role in
 `config/ithrive/shannon.yaml`, never a hard-coded address. His ShipSmooth
 address is a vendor/tooling identity and receives no agent mail.
@@ -48,12 +47,14 @@ address is a vendor/tooling identity and receives no agent mail.
 - `nar.read_order_history` (Tier 0 — order numbers and per-line
   quantities only, never the status field)
 - `internal.*` state writes (Tier 1)
-- `amazon_business.stage_cart` (Tier 1, ops-consumable cart URL)
 - `nar.plan_cart_staging` (Tier 0 — the dry run: reads the NAR cart and
   works out what would be added, writing nothing to the site; see
   docs/cart-staging.md)
-- `nar.stage_cart` (Tier 2), `dynarex.stage_cart` (Tier 2), `notify.email`
-  (Tier 2), `notify.sms` (Tier 2, urgent/anomalous only)
+- `nar.stage_cart` (Tier 2), `notify.email` (Tier 2), `notify.sms`
+  (Tier 2, urgent/anomalous only). NAR is the only cart she fills:
+  Dynarex staging was retired on 9 Sep 2026 when the site began serving
+  an image CAPTCHA, and the Amazon Business cart URL was dropped with it.
+  Both suppliers' lines go out in the report for Zach to order himself.
 - `internal.email_report_to_owner` (Tier 0) — the one send Shannon makes
   under `max_tier_this_phase: 0`: her own report, to the owner role of her
   own entity, and nothing else. It is irreversible, so it is named in
@@ -96,11 +97,12 @@ acceptable outcome; a run that guesses is not.
 - Call any integration except through the ActionBroker.
 - Use Shopify inventory quantities as stock, or any cached/stale value for
   on-hand.
-- Check out, pay, or confirm an order anywhere — at NAR or Dynarex she
-  stages the cart and stops, always.
-- Order from, or stage anything at, report-only suppliers (World Richman,
-  own printed) — gap list only. (Amazon Business cart *URLs* are the one
-  staging she may do below Tier 2, and they spend nothing.)
+- Check out, pay, or confirm an order anywhere — at NAR she stages the
+  cart and stops, always.
+- Order from, or stage anything at, report-only suppliers (Dynarex,
+  Amazon Business, World Richman, own printed) — those lines are hers to
+  report and link, never to add to anything.
+- Automate past a CAPTCHA, or work around one, anywhere.
 - Read the narescue.com order-status field, or guess at outstanding
   orders when Gmail is unavailable.
 - Put sellable-unit quantities in a cart — cart quantities are purchase

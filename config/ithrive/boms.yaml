@@ -39,18 +39,24 @@ suppliers:
 
   dynarex:
     name: Dynarex Corporation
-    acquisition: browser            # dynarex.com, account login
+    acquisition: by_hand            # dynarex.com, ordered by Zach himself
     lead_time_weeks: 1              # ~5 business days (Zach, 21 Aug 2026)
     credentials_env_prefix: DYNAREX_
     notes: >
-      Zach has a dynarex.com account. Credentials come from environment variables —
-      Chrome's saved passwords are not reachable from the automation container.
+      Zach has a dynarex.com account, and orders these lines by hand: the site
+      now serves an image CAPTCHA, and nothing is to be automated past it
+      (Zach, 9 Sep 2026). Each component below carries the product_url of its
+      exact SKU so the report can link straight to the page.
 
   amazon_business:
     name: Amazon Business
-    acquisition: cart_url           # cart built from ASINs
+    acquisition: by_hand            # ordered by Zach, by ASIN
     lead_time_weeks: 1
-    notes: Pack size is read from the live listing at cart time; see pack_size_policy.
+    notes: >
+      No Amazon integration exists and the cart-URL plan was dropped (Zach,
+      9 Sep 2026). The part number IS the purchase ASIN, so the report links
+      each line to amazon.com/dp/<ASIN>. Pack size is read from the live
+      listing when ordering; see pack_size_policy.
 
   world_richman:
     name: World Richman Corporation
@@ -347,18 +353,27 @@ components:
      note: "Lead time ~14 calendar days (Zach). CONFIRM who the seller is — see PL-3."}
 
   # ---- Dynarex (dynarex.com account) ---------------------------------------
+  # product_url: the page for this exact item code, resolved through
+  # dynarex.com/product_search/?q=<part> and accepted only where the one
+  # product link the search returned begins with this part number. 3161 is
+  # the reason the rule is written that way: the same search also offers
+  # 33161 and 43161, which are different products entirely.
   - {supplier: dynarex, part: "3161", name: "Krinkle Gauze Roll, Sterile 4.5in x 4.1yd 6-ply",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: 100, reorder_target: 400}
+     reorder_point: 100, reorder_target: 400,
+     product_url: "https://dynarex.com/products/disposable-medical-supplies/general-advanced-wound-care/3161-krinkle-gauze-roll--sterile"}
   - {supplier: dynarex, part: "3553", name: "Paper Surgical Tape 1in x 10yd",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: 100, reorder_target: 2000}
+     reorder_point: 100, reorder_target: 2000,
+     product_url: "https://dynarex.com/products/disposable-medical-supplies/surgical-procedural/3553-paper-surgical-tape"}
   - {supplier: dynarex, part: "3173", name: "Sensi-Wrap Self-Adherent Bandage 3in x 5yd, Tan",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: 100, reorder_target: 2000}
+     reorder_point: 100, reorder_target: 2000,
+     product_url: "https://dynarex.com/products/disposable-medical-supplies/general-advanced-wound-care/3173-sensi-wrap-self-adherent"}
   - {supplier: dynarex, part: "3683", name: "High Strength Pressure Bandage 4in (Israeli type)",
      class: reorder_point, units_per_purchase_unit: null,
-     reorder_point: 100, reorder_target: 400}
+     reorder_point: 100, reorder_target: 400,
+     product_url: "https://dynarex.com/products/disposable-medical-supplies/first-responder-supplies/3683-high-strength-pressure-bandage"}
 
   # ---- Amazon Business: kit components -------------------------------------
   - {supplier: amazon_business, part: "B0BR7XPNXW", name: "Trauma Shears",
@@ -460,6 +475,7 @@ components:
     purchase_unit_name: "case of 240"
     reorder_point: 200
     reorder_target: 2000
+    product_url: "https://dynarex.com/products/disposable-medical-supplies/first-responder-supplies/3681-triangular-bandage--non-woven"
     note: >
       SOURCED 21 Aug 2026 (Zach): Dynarex 3681, 240 units per case. Was previously
       internal/unsourced with ~2,000 held loose. NOT NAR 30-0089. Second-largest

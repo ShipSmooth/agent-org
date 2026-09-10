@@ -38,10 +38,9 @@ max_tier_this_phase: 0
 #   - action: nar.stage_cart
 #     up_to_tier: 2
 #
-# and for dynarex.com, separately and by its own name:
-#
-#   - action: dynarex.stage_cart
-#     up_to_tier: 2
+# NAR is the only cart there is: dynarex.com serves an image CAPTCHA, so
+# its staging was retired on 9 Sep 2026 and its lines are ordered by hand
+# from the weekly report, as Amazon Business's are.
 #
 # `up_to_tier: 2` leaves the anomaly escalations in force: a week that
 # escalates to Tier 3 (a line more than twice its trailing average, or too
@@ -51,8 +50,7 @@ max_tier_this_phase: 0
 #
 # The history is counted per supplier, from that supplier's own past live
 # weeks — so a first live run at a supplier always escalates to Tier 3,
-# however many weeks another supplier has behind it. A first live Dynarex
-# run therefore needs `up_to_tier: 3` even though NAR is long past it.
+# however many weeks another supplier has behind it.
 #
 # Neither value can buy anything. No supplier holds the `purchase`
 # capability, the cart interface has no checkout method, and the client
@@ -103,8 +101,6 @@ rules:
   # a cart Zach has not authorised is not a read he asked for.
   - action: nar.plan_cart_staging
     tier: 0
-  - action: dynarex.plan_cart_staging
-    tier: 0
 
   # ---- Tier 1: internal state, notify after ----
   - action: internal.enqueue_task
@@ -113,13 +109,9 @@ rules:
     tier: 1
   - action: internal.update_forecast_params
     tier: 1
-  - action: amazon_business.stage_cart
-    tier: 1
 
   # ---- Tier 2: reaches outside the company / any purchase action ----
   - action: nar.stage_cart
-    tier: 2
-  - action: dynarex.stage_cart
     tier: 2
   - action: notify.email
     tier: 2

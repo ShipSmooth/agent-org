@@ -57,7 +57,11 @@ max_tier_this_phase: 0
 # Neither value can buy anything. No supplier holds the `purchase`
 # capability, the cart interface has no checkout method, and the client
 # refuses checkout, order and payment paths outright.
-phase_exceptions: []
+phase_exceptions:
+  - action: nar.stage_cart
+    up_to_tier: 3
+  - action: dynarex.stage_cart
+    up_to_tier: 3
 
 rules:
   # ---- Tier 0: silent reads and internal work ----

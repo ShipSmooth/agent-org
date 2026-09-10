@@ -128,9 +128,7 @@ CODE_IN_TEXT = re.compile(
 )
 # How the autocomplete writes a part number: "Krinkle Gauze Roll (3161)".
 # Not anchored to the end of the line: a suggestion carries a price after
-# the code as often as not. Only the last of them is the code, so a
-# description that happens to bracket some other part number cannot be
-# read as this suggestion's own.
+# the code as often as not.
 SUGGESTED_CODE = re.compile(r"\(([A-Za-z0-9][\w.-]*)\)")
 GRAND_TOTAL = re.compile(r"(?:grand\s+total|order\s+total|total)\D{0,20}\$\s*([\d,]+\.\d{2})", re.I)
 SIGNED_IN = re.compile(r"sign\s*out|log\s*out|my account", re.IGNORECASE)
@@ -397,15 +395,17 @@ def exact_suggestion(sku: str, options: list[dict[str, Any]]) -> dict[str, Any] 
     The Quick Order autocomplete is the contains-search again, in a
     smaller box: typing 3161 offers 33161 and 43161 too, and clicking one
     of those puts the wrong product in the cart with no further warning.
-    A suggestion counts only if the code it carries — the last `(3161)`
-    in the line, or a code after a `Code:` — is the part itself. The last
-    one, because a description is free to mention some other part number
-    in brackets before the suggestion gets to its own.
+    A suggestion counts only if it names exactly one code — in a
+    `(3161)` or after a `Code:` — and that code is the part itself. One,
+    because a line reading "replaces (3161)" before its own `(43161)`
+    offers no way to tell a description from a part number, and the
+    wrong guess puts the wrong product in a real cart. A line Shannon
+    cannot read unambiguously is left for Zach to add by hand.
     """
     for option in options:
         text = str(option.get("text", ""))
-        codes = SUGGESTED_CODE.findall(text)[-1:] + CODE_IN_TEXT.findall(text)
-        if sku in codes:
+        codes = set(CODE_IN_TEXT.findall(text)) | set(SUGGESTED_CODE.findall(text))
+        if codes == {sku}:
             return option
     return None
 

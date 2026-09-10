@@ -209,6 +209,15 @@ innermost element carrying the typed digits read all three suggestions as
 suggestion is therefore split out of the list only where two or more
 sibling entries carry the digits, and its text is taken whole.
 
+A whole suggestion can name more than one code, though — a description
+reading "replaces (3161)" ahead of the product's own `(43161)`, or a
+`Code:` that disagrees with the brackets. There is nothing in the text
+that says which is the part, so a suggestion naming two codes is refused
+outright rather than resolved by position: only a line whose codes are
+the SKU and nothing else is clicked. A line Shannon will not read is a
+line Zach adds by hand, which is the cheap failure; clicking the wrong
+product is not.
+
 If the part itself is never offered, nothing is clicked, which is a
 refusal that has added nothing: the cart is untouched because typing is
 not an add.

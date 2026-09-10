@@ -8,13 +8,21 @@ document is mostly about why it cannot become one.
     uv run shannon stage --live              # adds to the real cart; needs a phase exception
     uv run shannon stage --week 2026-W35     # a particular week
     uv run shannon stage --live-data         # read the real cart rather than a saved copy
-    uv run shannon stage --supplier dynarex  # the other cart she can fill
+    uv run shannon stage --supplier nar      # which cart; nar is the only one left
 
-Two suppliers have a cart she can fill: NAR, over its Magento REST API,
-and Dynarex, driven through a browser because dynarex.com is a
-commercebuild portal with no API at all. Everything below is true of both
-unless it names one of them; `--supplier` picks which, and a supplier with
-no client is refused by name rather than falling back to another's cart.
+One supplier has a cart she can fill: NAR, over its Magento REST API.
+`--supplier` picks the cart, and a supplier without the `stage_cart`
+capability is refused by name rather than falling back to another's.
+
+Dynarex used to be the second, driven through a browser because
+dynarex.com is a commercebuild portal with no API. It is retired:
+the site now serves an image CAPTCHA, and nobody is to automate past one
+(Zach, 9 Sep 2026). `stage_cart` is gone from `dynarex` in
+`config/ithrive/suppliers.yaml`, so the broker refuses the action on
+capability before any browser opens; the Dynarex client below is left
+standing but unreachable. Those lines, and Amazon Business's, now go out
+in the report's ORDER THESE BY HAND section, each linked to its exact
+product page, and Zach orders them himself.
 
 ## It acts on the report, and calculates nothing
 
@@ -147,6 +155,10 @@ wider net, never a looser standard. Only when neither way holds the part
 is the part number called wrong.
 
 ## Dynarex: a portal, a Quick Order form, and a contains-search
+
+Retired, as above: nothing here runs any more, and it is kept because the
+hazards it describes are portal-shaped rather than Dynarex-shaped, and the
+next portal will have them too.
 
 Dynarex has no API, so the cart is read and filled in a real browser, and
 everything the client knows about the portal was read off the live site

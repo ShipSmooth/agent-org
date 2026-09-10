@@ -20,10 +20,15 @@ suppliers:
     capabilities: [read_catalog, read_order_history, stage_cart]
     lead_time_weeks: 3
   dynarex:
-    capabilities: [read_catalog, stage_cart]
+    # No stage_cart: dynarex.com now serves an image CAPTCHA, which nobody is
+    # to automate past (Zach, 9 Sep 2026). Dynarex lines are ordered by hand
+    # from the weekly report, which links each one to its exact product page.
+    capabilities: [read_catalog, report_only]
     lead_time_weeks: 1           # ~5 business days (Zach, 21 Aug 2026)
   amazon_business:
-    capabilities: [stage_cart]
+    # No stage_cart: there is no Amazon integration and the cart-URL plan was
+    # dropped (Zach, 9 Sep 2026). Ordered by hand, by ASIN, from the report.
+    capabilities: [report_only]
     lead_time_weeks: 1
   world_richman:
     capabilities: [report_only]

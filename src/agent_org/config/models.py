@@ -119,6 +119,11 @@ class Component:
     # The listing Zach sells this component on. Descriptive only: sales join
     # on the channel SKU, which Zach controls (docs/replenishment.md §5).
     sales_asin: str | None
+    # The supplier's page for this exact item code, for the lines Zach orders
+    # by hand. Config-loaded rather than resolved at report time, so a link
+    # is only ever one a human has checked; loading fails where the URL does
+    # not name the part, because a link to the wrong item is worse than none.
+    product_url: str | None
     # True where the supplier genuinely publishes no item number — Orca sells
     # by product name. The part is then ours, held for identity only, and is
     # never quoted to the supplier as a SKU.

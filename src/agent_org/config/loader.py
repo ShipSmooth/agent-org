@@ -14,8 +14,9 @@ from datetime import date, datetime
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
-from agent_org.config.errors import ConfigError, Finding, error
+from agent_org.config.errors import ConfigError, Finding, error, warning
 from agent_org.config.listings import EMPTY, load_listings
 from agent_org.config.models import (
     STOCK_SOURCE_VEEQO,
@@ -120,6 +121,43 @@ def _date_or_none(value: Any) -> date | None:
             return date.fromisoformat(value.strip())
         except ValueError:
             return None
+    return None
+
+
+def _product_url(entry: YamlMap, key: ComponentKey, findings: list[Finding]) -> str | None:
+    """The supplier's page for this exact item code, or a plain refusal.
+
+    Zach clicks these straight out of the weekly email and adds what he
+    finds to a real cart, so a link to a neighbouring product is worse than
+    no link at all: dynarex.com's own search for 3161 offers 33161 and
+    43161 beside it. A URL is therefore kept only where its last path
+    segment names the part; anything else is dropped, so the line prints
+    unlinked with its item code, and warned about so it gets fixed. It is
+    a bad link, not a bad number: the week's arithmetic still stands.
+    """
+    url = _str_or_none(entry.get("product_url"))
+    if url is None:
+        return None
+    url = url.strip()
+    segment = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
+    named = segment.lower() == key.part.lower() or segment.lower().startswith(
+        f"{key.part.lower()}-"
+    )
+    if url.startswith("https://") and named:
+        return url
+    findings.append(
+        warning(
+            f"Component {key} has a product_url of '{url}', which does not "
+            f"look like the page for item {key.part}.",
+            entry.loc_of("product_url"),
+            fix=(
+                "Give the https:// address of that exact item's own product "
+                f"page — its last path segment must start with {key.part} — "
+                "or remove product_url. Until then the report prints that "
+                "line without a link."
+            ),
+        )
+    )
     return None
 
 
@@ -385,6 +423,7 @@ def load_boms(boms_path: Path, suppliers_path: Path) -> tuple[BomConfig, list[Fi
             purchase_asin=_str_or_none(entry.get("purchase_asin"))
             or (component_key.part if component_key.supplier == "amazon_business" else None),
             sales_asin=_str_or_none(entry.get("sales_asin")),
+            product_url=_product_url(entry, component_key, findings),
             part_is_internal_reference=internal_reference,
             resale_only=bool(entry.get("resale_only", False)),
             cover_target_weeks=_fraction_or_none(entry.get("cover_target_weeks")),

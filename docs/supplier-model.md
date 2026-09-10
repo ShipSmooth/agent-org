@@ -17,8 +17,8 @@ before policy tiers are even consulted.
 | Supplier | Integration | Capabilities | Notes |
 |---|---|---|---|
 | **NAR** (North American Rescue) | Browser automation (headless Chromium) against narescue.com — **no API**, confirmed with vendor | `read_catalog`, `read_order_history`, `stage_cart` | Session expires frequently and requires clicking a login button; automation re-logs-in from env-var credentials (Chrome saved passwords are unreachable from a container). Freight is LTL, auto-quoted only at checkout: discovered and reported, never predicted. Catalogue updates arrive monthly, manually, from Zach's NAR contact. `read_order_history` covers order **numbers and per-line quantities only** — the site's order-status field is unreliable and must never be read; outstanding orders come from Gmail (docs/replenishment.md §3.1). **No `purchase` capability in v1.** |
-| **Dynarex** | Browser automation against dynarex.com — Zach orders there directly via his account | `read_catalog`, `stage_cart` | Krinkle gauze 3161, petrolatum gauze 3553, Sensi-Wrap 3173, cold packs 3683. Credentials from env vars, `DYNAREX_` prefix. Same hard rule as NAR: stage the cart, **never check out**. Lead time 1 week (~5 business days). |
-| **Amazon Business** | Cart URL construction from `purchase_asin`s (no account access) | `stage_cart` (URL only), `report_only` lines otherwise | Overlaps Dynarex lines; whichever supplier a component record names. Staging an ops-consumable cart is Tier 1, notify after — a cart URL spends nothing and reaches no outside party. |
+| **Dynarex** | None — Zach orders on dynarex.com himself, from his own account | `read_catalog`, `report_only` | Krinkle gauze 3161, petrolatum gauze 3553, Sensi-Wrap 3173, cold packs 3683. Cart staging was retired on 9 Sep 2026 when the site began serving an image CAPTCHA, which nobody is to automate past. Each component carries the `product_url` of its exact item code, so the report links Zach straight to the page. Lead time 1 week (~5 business days). |
+| **Amazon Business** | None — no account access, and the cart-URL plan was dropped (9 Sep 2026) | `report_only` | Overlaps Dynarex lines; whichever supplier a component record names. The part number *is* the purchase ASIN, so the report links each line to `amazon.com/dp/<ASIN>` and Zach adds it himself. |
 | **World Richman** (soft goods: carriers, pouches, bags) | None | `report_only` | Part numbers follow `<kit sku>-bag`. Lead time 9 weeks (~60 days), the longest in the system, so this supplier carries its own `cover_target_weeks: 13`. |
 | **Own printed** (instruction cards) | None | `report_only` | Lead time 2 weeks. Four cards, both printers confirmed: `CARD-ESSENTIAL-EXPRESS` (20-314, 20-315, 25-001, 25-002) and the two Basic cards `CARD-BASIC-CAT` (25-010) and `CARD-BASIC-SAMXT` (26-002) from Next Day Flyers; `CARD-REDBAG` (26-001) from 48HourPrint. |
 | **SAM Medical** (SAM XT tourniquets) | None | `report_only` | Bought direct, not through NAR. Lead time 2 weeks. |
@@ -59,13 +59,14 @@ invent an identifier": the supplier genuinely has none.
 
 The replenishment output is split per supplier (docs/replenishment.md §5):
 
-- Lines whose supplier has `stage_cart` → an ActionProposal to stage that
-  supplier's cart. NAR and Dynarex cart staging are Tier 2; an Amazon
-  Business cart URL built from `purchase_asin`s is Tier 1 (see
-  docs/policy.md). Cart quantities are always **purchase units**
-  (docs/replenishment.md §6.1), never sellable units.
-- Lines whose supplier is `report_only` → gap-list entries inside the weekly
-  report proposal. No per-line action exists for Shannon to take.
+- Lines whose supplier has `stage_cart` — NAR alone — → an ActionProposal
+  to stage that supplier's cart, Tier 2 (see docs/policy.md). Cart
+  quantities are always **purchase units** (docs/replenishment.md §6.1),
+  never sellable units.
+- Lines whose supplier is `report_only` → the report's ORDER THESE BY HAND
+  section, one block per supplier, each line carrying its quantity, its
+  item code and — where one can be proved to name that exact item — a link
+  to its product page. No per-line action exists for Shannon to take.
 - `ops_consumable` components never enter this split at all — they belong
   to the separate calendar-triggered reminder (docs/replenishment.md §4.1),
   which shares only the cart-staging machinery.

@@ -18,12 +18,14 @@ from datetime import datetime
 from agent_org.config.models import ComponentClass, LoadedConfig, ParkingLotItem
 from agent_org.integrations.reads import OrderSignals
 from agent_org.shannon.calculator import (
+    GAP_LIST,
     ComponentPlan,
     ReplenishmentResult,
     Sufficiency,
     format_number,
     in_words,
 )
+from agent_org.shannon.product_links import product_url
 
 RULE = "=" * 78
 THIN = "-" * 78
@@ -101,6 +103,101 @@ def _route_name(routing: str) -> str:
 def _count(number: int, singular: str, plural: str) -> str:
     """ "1 warning", not "1 warnings" — this is read at speed on a phone."""
     return f"{number} {singular if number == 1 else plural}"
+
+
+def _quantity_line(plan: ComponentPlan) -> str:
+    """How much to buy, in the units the supplier's own page sells."""
+    line = f"order {plan.order_units} units"
+    if plan.purchase_units is not None and plan.purchase_unit_name:
+        line += f" — {plan.purchase_units} × {plan.purchase_unit_name}"
+        if plan.actual_units is not None and plan.actual_units != plan.order_units:
+            line += f", which brings {plan.actual_units}"
+    return line
+
+
+def _supplier_name(config: LoadedConfig, key: str) -> str:
+    supplier = config.boms.suppliers.get(key)
+    return supplier.name if supplier is not None else key
+
+
+def staged_block(result: ReplenishmentResult, config: LoadedConfig) -> list[str]:
+    """The lines Shannon puts in a real cart, so Zach only has to order them."""
+    lines: list[str] = []
+    add = lines.append
+    staged = [
+        plan
+        for plan in result.components
+        if plan.order_units > 0 and plan.routing.endswith("_cart")
+    ]
+    add("SHANNON STAGES THESE FOR YOU — they go into the supplier's own cart, ready to order")
+    add(THIN)
+    if not staged:
+        add("  Nothing is staged this week.")
+        return lines
+    add("  Shannon adds these to the supplier's cart herself, on the staging run that")
+    add("  follows this email — you get a second email confirming exactly what went in.")
+    add("  She never checks out, pays or places the order: you open the cart and do that.")
+    for supplier in sorted({plan.supplier for plan in staged}):
+        add("")
+        add(f"  {_supplier_name(config, supplier)} — {_route_name(f'{supplier}_cart')}")
+        for plan in (p for p in staged if p.supplier == supplier):
+            add(f"    {plan.key.part}  {plan.name}")
+            add(f"        {_quantity_line(plan)}")
+    return lines
+
+
+def by_hand_block(result: ReplenishmentResult, config: LoadedConfig) -> list[str]:
+    """The lines Zach orders himself, each pointed at its exact product page.
+
+    Nothing here is in a cart anywhere. Dynarex serves an image CAPTCHA and
+    there is no Amazon integration, so Shannon's whole contribution is the
+    arithmetic and a link she can prove goes to the right item — where she
+    cannot prove it, she prints the item code and says so rather than
+    offering a search that could show a neighbouring product first.
+    """
+    lines: list[str] = []
+    add = lines.append
+    by_hand = [
+        plan for plan in result.components if plan.order_units > 0 and plan.routing == GAP_LIST
+    ]
+    reasons = {entry.key: entry.reason for entry in result.gap_list}
+    add("ORDER THESE BY HAND — nothing below is in a cart; you add and order these yourself")
+    add(THIN)
+    if not by_hand:
+        add("  Nothing to order by hand this week.")
+        return lines
+    add("  Shannon has not staged, reserved or ordered any of these. Each link goes to")
+    add("  that exact item code's own page — never a search — so you can check the page")
+    add("  matches the description before you add it to your cart.")
+    for supplier in sorted({plan.supplier for plan in by_hand}):
+        add("")
+        add(f"  {_supplier_name(config, supplier)}")
+        name = _supplier_name(config, supplier)
+        reason = next((reasons[plan.key] for plan in by_hand if plan.supplier == supplier), None)
+        if reason and not reason.startswith(name):
+            add(f"    ({reason.rstrip('.')}.)")
+        for plan in (p for p in by_hand if p.supplier == supplier):
+            component = config.boms.components.get(plan.key)
+            if plan.part_is_internal_reference:
+                add(f"    {plan.name}  (our reference {plan.key.part})")
+            else:
+                add(f"    {plan.key.part}  {plan.name}")
+            add(f"        {_quantity_line(plan)}")
+            url = None if component is None else product_url(component)
+            if url is not None:
+                add(f"        {url}")
+            elif plan.part_is_internal_reference:
+                add(
+                    "        no link: that reference is ours, not theirs — order "
+                    f"by the product name “{plan.name}”."
+                )
+            else:
+                add(
+                    "        no link: Shannon has no page she can prove is item "
+                    f"{plan.key.part}, so find it yourself and check the item "
+                    "code on the page before you add it."
+                )
+    return lines
 
 
 @dataclass(frozen=True)
@@ -284,6 +381,15 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
         add("  Nothing needs ordering this week.")
         add("")
 
+    # The same order lines again, split by who does the ordering. Which cart
+    # a line lands in — or that it lands in none — is the difference between
+    # a job Zach has to do this week and one already done for him, and it is
+    # not something to work out from a route string half a page up.
+    lines.extend(staged_block(result, config))
+    add("")
+    lines.extend(by_hand_block(result, config))
+    add("")
+
     add("NOTHING TO ORDER THIS WEEK")
     add(THIN)
     quiet = [
@@ -422,17 +528,6 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
             )
     add("")
 
-    add("GAP LIST — order these by hand")
-    add(THIN)
-    if not result.gap_list:
-        add("  Nothing on the gap list this week.")
-    for entry in result.gap_list:
-        add(
-            f"  {entry.key}  {entry.name}: available {entry.available}, "
-            f"suggested {entry.suggested_top_up}. {entry.reason}"
-        )
-    add("")
-
     add("BLOCKED — Shannon could not calculate these")
     add(THIN)
     if not context.blocked:
@@ -485,4 +580,4 @@ def render(result: ReplenishmentResult, config: LoadedConfig, context: ReportCon
     return "\n".join(lines) + "\n"
 
 
-__all__ = ["ReportContext", "render", "summary_block"]
+__all__ = ["ReportContext", "by_hand_block", "render", "staged_block", "summary_block"]

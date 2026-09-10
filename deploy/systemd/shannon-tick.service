@@ -1,0 +1,26 @@
+[Unit]
+Description=Shannon: run whatever this week's schedule says is due
+Documentation=file:///opt/agent-org/docs/scheduling.md
+# The report is read-only against Veeqo and the inbox, and writes to
+# Postgres. Without the database there is nothing to run into.
+Requires=postgresql.service
+After=postgresql.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/agent-org
+EnvironmentFile=/opt/agent-org/.env
+ExecStart=/usr/bin/env uv run shannon tick
+# `tick` is the only command this unit may start, and it cannot stage a
+# cart. Staging stays a thing Zach starts himself, the week he means it.
+User=shannon
+Group=shannon
+# The report file and nothing else on the disk.
+ReadWritePaths=/opt/agent-org/reports
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

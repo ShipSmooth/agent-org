@@ -1,0 +1,17 @@
+[Unit]
+Description=Ask Shannon hourly whether this week's run is due
+
+[Timer]
+# Hourly, not "Monday 06:00". The schedule itself lives in
+# config/entities/<entity>.yaml and `shannon tick` reads it; this timer
+# only decides how often she is asked. Asking hourly is what makes a
+# Monday the machine spent switched off catch up on the Tuesday: being
+# due lasts the week, and the week's run happens once.
+OnCalendar=hourly
+# A machine that boots at 09:00 on the Monday runs the missed hour rather
+# than waiting until 10:00.
+Persistent=true
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

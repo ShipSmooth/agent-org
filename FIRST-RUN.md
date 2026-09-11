@@ -236,9 +236,11 @@ is read.
 
 ## 5. Run Shannon by hand
 
-There is a schedule in the configuration (Mondays, 06:00), and you can
-see it with `uv run shannon schedule`. In Phase 1 the manual trigger is
-the one that matters:
+There is a schedule in the configuration (Mondays, 06:00 in the
+business's own timezone), and you can see it with
+`uv run shannon schedule`. Nothing acts on it until you set up the hourly
+timer described in docs/scheduling.md; until then, and whenever you want
+this week's numbers early, run it yourself:
 
 ```powershell
 uv run shannon run

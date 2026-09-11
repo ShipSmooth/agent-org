@@ -266,20 +266,24 @@ def test_the_staged_section_does_not_say_these_are_in_a_cart_already(
 
 
 def test_staging_that_policy_refuses_is_not_promised(config: LoadedConfig) -> None:
-    """`max_tier_this_phase: 0` refuses nar.stage_cart, so the run this
-    section points at will not fill anything. Promising it leaves Zach
-    waiting on a confirmation email that never arrives."""
-    assert not _staging_is_authorised(config, "nar")
-    staged = "\n".join(staged_block(_nar_result(config), config))
+    """A refused staging run is said to be refused, not promised.
+
+    Promising a cart the broker will refuse leaves Zach waiting on a
+    confirmation email that never arrives. Here the exception for
+    `nar.stage_cart` is taken away, which is what the file looked like
+    before live staging was switched on and what it looks like again if
+    anyone switches it off."""
+    refused = replace(config, policy=replace(config.policy, phase_exceptions={}))
+    assert not _staging_is_authorised(refused, "nar")
+    staged = "\n".join(staged_block(_nar_result(refused), refused))
     assert "Policy refuses that staging run today" in staged
 
 
 def test_an_authorised_supplier_is_not_flagged_as_refused(config: LoadedConfig) -> None:
-    """Raise the ceiling to what nar.stage_cart costs and the caveat goes,
-    so the line tracks policy rather than being printed unconditionally."""
-    allowed = replace(config, policy=replace(config.policy, max_tier_this_phase=2))
-    assert _staging_is_authorised(allowed, "nar")
-    staged = "\n".join(staged_block(_nar_result(allowed), allowed))
+    """As the policy file stands, NAR staging is authorised, so the caveat
+    goes — the line tracks policy rather than being printed always."""
+    assert _staging_is_authorised(config, "nar")
+    staged = "\n".join(staged_block(_nar_result(config), config))
     assert "Policy refuses" not in staged
 
 

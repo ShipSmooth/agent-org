@@ -11,10 +11,11 @@ import argparse
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from agent_org.config.errors import ConfigError
 from agent_org.config.loader import load_config
-from agent_org.config.models import LoadedConfig
+from agent_org.config.models import AgentSchedule, LoadedConfig
 from agent_org.config.validate import validate
 from agent_org.db.connection import (
     DatabaseNotConfigured,
@@ -34,6 +35,7 @@ from agent_org.runtime.staging import (
     stage_supplier_cart,
 )
 from agent_org.runtime.worker import (
+    SHANNON_REPLENISHMENT,
     NothingToResend,
     RunAlreadyDone,
     deliver_report,
@@ -64,6 +66,24 @@ def _saved_data(value: str | None) -> Path | None:
 
 def _load(args: argparse.Namespace) -> LoadedConfig:
     return load_config(Path(args.config_root), args.entity)[0]
+
+
+def _local_now(config: LoadedConfig) -> datetime:
+    """The clock the schedule is written against: the business's own.
+
+    "cron: 0 6 * * MON" is read by a person in Springfield as six in the
+    morning there, and a timer that fired it at six UTC would land it at
+    one or two in the morning depending on the season. The entity file
+    already names the timezone; this is where it is believed.
+    """
+    try:
+        return datetime.now(tz=ZoneInfo(config.entity.timezone))
+    except ZoneInfoNotFoundError:
+        print(
+            f"'{config.entity.timezone}' is not a timezone this machine knows, "
+            "so schedules are read in UTC instead."
+        )
+        return datetime.now(tz=UTC)
 
 
 def cmd_validate_config(args: argparse.Namespace) -> int:
@@ -165,6 +185,28 @@ def cmd_sync(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     config = _load(args)
+    return _run_the_week(args, config, _local_now(config), already_done_is_fine=False)
+
+
+def _run_the_week(
+    args: argparse.Namespace,
+    config: LoadedConfig,
+    now: datetime,
+    already_done_is_fine: bool,
+) -> int:
+    """This week's numbers, written and posted.
+
+    `already_done_is_fine` is for the timer: asked every hour, a week
+    that is already done is the expected answer and not a fault worth
+    mailing an operator about. Typed by hand it is worth saying loudly,
+    because the person typing expected a report out of it.
+
+    `now` is the business's own clock, and the week a run belongs to is
+    counted from it. In UTC, Sunday evening in Springfield is already
+    Monday: a catch-up run started then would be filed under the week
+    about to begin, and Monday's proper run would be refused as one
+    already done.
+    """
     try:
         settings = DatabaseSettings.from_env()
     except DatabaseNotConfigured as exc:
@@ -183,7 +225,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     config=config,
                     fixtures=fixtures,
                     output_dir=Path(args.output),
-                    now=datetime.now(tz=UTC),
+                    now=now,
                     again=bool(args.again),
                 )
             # The report row and the file are committed here, before
@@ -205,7 +247,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return EXIT_PROBLEM
     except RunAlreadyDone as exc:
         print(str(exc))
-        return EXIT_PROBLEM
+        return EXIT_OK if already_done_is_fine else EXIT_PROBLEM
 
     if summary.error is not None:
         print(f"The run stopped: {summary.error}")
@@ -384,10 +426,47 @@ def cmd_stage(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_tick(args: argparse.Namespace) -> int:
+    """Run whatever the entity's schedule says is due, and nothing else.
+
+    This is the command a timer calls. It can start exactly one kind of
+    work — the weekly replenishment run, which reads, writes a report and
+    emails it. There is deliberately no path from here to `shannon
+    stage`: putting lines in a supplier's cart is a decision Zach makes
+    that week, not something a machine decides at 06:00 because it is
+    Monday.
+
+    Asked hourly, it is a no-op every hour but one. A Monday the Dell
+    spent switched off is picked up whenever it comes back, because being
+    due lasts the week and the week's run happens once.
+    """
+    config = _load(args)
+    now = _local_now(config)
+    due: list[AgentSchedule] = []
+    for agent in config.entity.agents:
+        try:
+            if is_due(agent.schedule, now):
+                due.append(agent)
+        except ScheduleError as exc:
+            print(f"{agent.kind}: {exc}")
+            print("Nothing was run.")
+            return EXIT_PROBLEM
+
+    runnable = [agent for agent in due if agent.kind == SHANNON_REPLENISHMENT]
+    for agent in due:
+        if agent.kind != SHANNON_REPLENISHMENT:
+            print(f"{agent.kind} is due, but no command runs it yet. It was skipped.")
+    if not runnable:
+        print(f"Nothing is due for {config.entity.legal_name} as of {now:%A %d %B %Y %H:%M %Z}.")
+        return EXIT_OK
+    print(f"{SHANNON_REPLENISHMENT} is due. Running this week's replenishment.")
+    return _run_the_week(args, config, now, already_done_is_fine=True)
+
+
 def cmd_schedule(args: argparse.Namespace) -> int:
     config = _load(args)
-    now = datetime.now(tz=UTC)
-    print(f"Schedules for {config.entity.legal_name}, as of {now:%A %d %B %Y %H:%M} UTC")
+    now = _local_now(config)
+    print(f"Schedules for {config.entity.legal_name}, as of {now:%A %d %B %Y %H:%M %Z}")
     for agent in config.entity.agents:
         try:
             due = is_due(agent.schedule, now)
@@ -396,7 +475,11 @@ def cmd_schedule(args: argparse.Namespace) -> int:
             continue
         print(f"  {agent.kind:<28} {agent.schedule:<24} " + ("due now" if due else "not due"))
     print("")
-    print("Runs are started by hand: `shannon run`.")
+    print(
+        "Nothing here starts on its own. `shannon run` starts a run by hand; "
+        "`shannon tick` runs whatever is due above and is what the timer "
+        "calls. Neither can stage a cart — that is `shannon stage`, by hand."
+    )
     return EXIT_OK
 
 
@@ -596,6 +679,34 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     stage_cmd.set_defaults(func=cmd_stage)
+
+    tick_cmd = sub.add_parser(
+        "tick",
+        help=(
+            "run whatever this business's schedule says is due now, and nothing "
+            "else. This is what the timer calls, every hour: on the one it is "
+            "due it does exactly what `shannon run` does, and on the others it "
+            "prints that nothing is due and stops. It cannot stage a cart, "
+            "contact a supplier or place an order — staging is `shannon stage`, "
+            "started by hand, that week."
+        ),
+    )
+    tick_cmd.add_argument(
+        "--fixtures",
+        default="",
+        help=(
+            "folder of saved Veeqo/Gmail exports to read instead of the live "
+            "accounts. Empty, the default, means the live accounts: a timed run "
+            "that quietly reported saved numbers would be worse than no report"
+        ),
+    )
+    tick_cmd.add_argument(
+        "--output", default="reports", help="folder to write the report file into"
+    )
+    tick_cmd.add_argument(
+        "--no-email", action="store_true", help="write the report but do not email it"
+    )
+    tick_cmd.set_defaults(func=cmd_tick, live_data=False, again=False)
 
     schedule_cmd = sub.add_parser(
         "schedule",

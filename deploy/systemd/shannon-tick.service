@@ -1,0 +1,30 @@
+[Unit]
+Description=Shannon: run whatever this week's schedule says is due
+Documentation=file:///opt/agent-org/docs/scheduling.md
+# Postgres runs in Docker here, not as a host unit, so there is nothing
+# to require: a database that is down is reported by the run itself,
+# where a missing `postgresql.service` would stop the timer firing at
+# all. Wants=, not Requires=, if you do give it a host database.
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/agent-org
+EnvironmentFile=/opt/agent-org/.env
+ExecStart=/usr/bin/env uv run shannon tick
+# `tick` is the only command this unit may start, and it cannot stage a
+# cart. Staging stays a thing Zach starts himself, the week he means it.
+User=shannon
+Group=shannon
+# The report folder and nothing else on the disk. It must exist and be
+# Shannon's before the first tick — systemd sets the mount up before
+# ExecStart, so it cannot be created by the run:
+#   install -d -o shannon -g shannon /opt/agent-org/reports
+ReadWritePaths=/opt/agent-org/reports
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

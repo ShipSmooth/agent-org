@@ -70,7 +70,12 @@ uv run shannon run --again       # work a finished week out afresh, as often as 
 uv run shannon resend            # email the report that already exists, unchanged
 uv run shannon stage             # put this week's NAR lines in the cart — dry run by default
 uv run shannon schedule          # what is scheduled, and whether it is due
+uv run shannon tick              # run whatever is due now; what the hourly timer calls
 ```
+
+`tick` is the only command anything automatic runs, and it can start only
+the report. Staging a cart is typed by hand, the week it is meant. See
+docs/scheduling.md for the timer.
 
 Credentials come from environment variables only — copy `.env.example` to
 `.env` and fill it in; the comments say where each value is obtained.

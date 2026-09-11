@@ -32,15 +32,13 @@ max_tier_this_phase: 0
 # updating Shopify or creating an FBA inbound plan, which is what raising
 # `max_tier_this_phase` to 2 would do.
 #
-# To let Shannon put lines in the real narescue.com cart — and only that —
-# uncomment these two lines:
-#
-#   - action: nar.stage_cart
-#     up_to_tier: 2
-#
-# NAR is the only cart there is: dynarex.com serves an image CAPTCHA, so
-# its staging was retired on 9 Sep 2026 and its lines are ordered by hand
-# from the weekly report, as Amazon Business's are.
+# `nar.stage_cart` is switched on below, so Shannon may put lines in the
+# real narescue.com cart when the command is given. NAR is the only cart
+# there is: dynarex.com serves an image CAPTCHA, so its staging was
+# retired on 9 Sep 2026 and its lines are ordered by hand from the weekly
+# report, as Amazon Business's are. An exception naming an action with no
+# rule is refused at load, which is what a leftover `dynarex.stage_cart`
+# line here did.
 #
 # `up_to_tier: 2` leaves the anomaly escalations in force: a week that
 # escalates to Tier 3 (a line more than twice its trailing average, or too
